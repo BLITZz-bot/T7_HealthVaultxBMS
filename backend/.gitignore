@@ -1,0 +1,8 @@
+.env
+worker_keys.json
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+dist/

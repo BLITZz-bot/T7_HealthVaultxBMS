@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+web3>=6.0.0
+eth-account>=0.10.0
+python-dotenv
+cryptography
+pydantic
+pydantic-settings
+httpx
