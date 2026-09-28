@@ -6,8 +6,8 @@ import 'package:http/http.dart' as http;
 import 'local_db_service.dart';
 
 class BlockchainService {
-  // TODO: Update this to your deployed Render URL or local relay IP.
-  static const String RELAY_URL = 'http://localhost:8000';
+  static const String RELAY_URL = 'https://t7-mst-health-vault.onrender.com';
+  static const String DEMO_WORKER_ADDRESS = '0xB7a280Cd618dB5a0E82D84306DB423728034A089';
 
   static final List<String> VITALS_FIELDS = [
     "hr",
@@ -88,15 +88,34 @@ class BlockchainService {
 
     for (var record in pending) {
       try {
+        // 1. Fetch raw vitals for this record
+        final medRecList = await db.query(
+          'medical_records',
+          where: 'id = ?',
+          whereArgs: [record['medical_record_id']]
+        );
+        if (medRecList.isEmpty) continue;
+        final medRec = medRecList.first;
+        final memberId = record['member_id'].toString();
+
+        final vitals = {
+          "hr": medRec['pulse_rate'],
+          "sbp": medRec['blood_pressure_systolic'],
+          "dbp": medRec['blood_pressure_diastolic'],
+          "temp": medRec['temperature'],
+          "spo2": medRec['spo2'],
+          "resp": medRec['respiratory_rate'],
+          "recorded_at": medRec['recorded_at'],
+        };
+
+        // 2. Call the new /anchor endpoint on Render
         final response = await http.post(
-          Uri.parse('$RELAY_URL/relay/vitals'),
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $ashaToken',
-          },
+          Uri.parse('$RELAY_URL/anchor'),
+          headers: {'Content-Type': 'application/json'},
           body: jsonEncode({
-            'visit_key': "0x" + record['visit_key'],
-            'payload_hash': record['payload_hash'],
+            'worker_address': DEMO_WORKER_ADDRESS,
+            'vitals': vitals,
+            'beneficiary_id': memberId,
           }),
         );
 

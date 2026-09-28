@@ -189,7 +189,7 @@ async def register_worker(
         "worker_address": worker_address,
         "cred_hash":      cred_hash,
         "tx_hash":        tx_hash,
-        "explorer":       f"https://mstscan.com/tx/{tx_hash}",
+        "explorer":       f"https://testnet.mstscan.com/tx/{tx_hash}",
     }
 
 
@@ -231,7 +231,7 @@ async def grant_consent(req: ConsentRequest):
         "tx_hash":    tx_hash,
         "consent_id": consent_id,
         "expires_at": datetime.fromtimestamp(expiry_unix, tz=timezone.utc).isoformat(),
-        "explorer":   f"https://mstscan.com/tx/{tx_hash}",
+        "explorer":   f"https://testnet.mstscan.com/tx/{tx_hash}",
     }
 
 
@@ -276,7 +276,7 @@ async def anchor_record(req: AnchorRequest):
         "record_hash":     record_root_hex,
         "ai_digest":       ai_digest_hex,
         "beneficiary_ref": req.beneficiary_id,
-        "explorer":        f"https://mstscan.com/tx/{tx_hash}",
+        "explorer":        f"https://testnet.mstscan.com/tx/{tx_hash}",
     }
 
 
@@ -311,7 +311,7 @@ async def submit_visit(req: VisitRequest):
     return {
         "tx_hash":   tx_hash,
         "visit_key": vk_hex,
-        "explorer":  f"https://mstscan.com/tx/{tx_hash}",
+        "explorer":  f"https://testnet.mstscan.com/tx/{tx_hash}",
     }
 
 
@@ -341,7 +341,7 @@ async def batch_attest_visits(
         "status":         "success",
         "tx_hash":        tx_hash,
         "attested_count": len(req.visit_keys),
-        "explorer":       f"https://mstscan.com/tx/{tx_hash}",
+        "explorer":       f"https://testnet.mstscan.com/tx/{tx_hash}",
     }
 
 
@@ -378,7 +378,7 @@ async def verify_record(record_hash: str):
         "anchored_at":     anchor.get("anchoredAt"),
         "ai_digest":       anchor.get("aiDigest"),
         "worker_active":   worker_active,
-        "explorer":        f"https://mstscan.com/address/{record_hash}" if anchor["exists"] else None,
+        "explorer":        f"https://testnet.mstscan.com/address/{record_hash}" if anchor["exists"] else None,
     }
 
 

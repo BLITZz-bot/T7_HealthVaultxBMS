@@ -2,7 +2,7 @@
   "network": "mstTestnet",
   "chainId": 91562037,
   "rpc": "https://testnetrpc.mstblockchain.com",
-  "explorer": "https://mstscan.com",
+  "explorer": "https://testnet.mstscan.com",
   "deployedAt": "2026-09-28T21:59:42.541Z",
   "deployer": "0xB7a280Cd618dB5a0E82D84306DB423728034A089",
   "contracts": {
