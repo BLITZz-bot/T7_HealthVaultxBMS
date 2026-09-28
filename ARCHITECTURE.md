@@ -1,156 +1,155 @@
-# T7 HealthVault — System Architecture & Engineering Specification
+# T7 HealthVault — Comprehensive System Architecture & Engineering Specification
 
 ## 1. Executive Summary
 
-**T7 HealthVault** is an enterprise-grade, offline-first clinical Electronic Health Record (EHR) and Decision Support System engineered specifically for **Accredited Social Health Activists (ASHA)**, Community Health Officers (CHOs), and Primary Health Centres (PHCs) across India.
+**T7 HealthVault** is an enterprise-grade, offline-first clinical Electronic Health Record (EHR) and **Blockchain-Verified Incentive Platform** engineered for Accredited Social Health Activists (ASHA), Community Health Officers (CHOs), and Primary Health Centres (PHCs) across India.
 
-The platform provides:
-* **100% Offline Clinical Intelligence**: Real-time triage, maternal health monitoring, sepsis risk scoring, and longitudinal physiological delta tracking.
-* **On-Device Generative AI (LLM)**: Quantized on-device GGUF neural weights (`Qwen3-1.7B-Q4_K_M.gguf`, ~1.05 GB) capable of zero-latency, open-ended clinical reasoning in low-connectivity rural environments.
-* **Pan-India Multilingual Support**: Dynamic bi-directional clinical explanations across **all 22 Scheduled Indian Languages + English**.
-* **Zero-Leakage Privacy**: ABHA-compliant patient record architecture where all patient health data is processed and stored locally on the device.
+The platform solves two massive systemic issues:
+1. **Lack of offline clinical intelligence**: By running quantized LLMs and NEWS2 algorithms entirely on-device, ASHAs get zero-latency decision support without internet.
+2. **Delayed stipends & phantom paperwork**: By introducing a zero-PII cryptographic proof-of-visit system anchored to the **MST EVM Blockchain**, the platform automatically disburses `CareCoin` (MSTC) tokens upon verification, eliminating payment delays and blocking duplicate/fraudulent claims.
 
 ---
 
 ## 2. System Architecture & Component Topology
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           PRESENTATION LAYER                            │
-│  ┌───────────────────────┐  ┌───────────────────────┐  ┌─────────────┐  │
-│  │   ASHA Home Screen    │  │ Member Detail Screen  │  │  AI Chat    │  │
-│  │ (Demographics/Search) │  │  (EHR & Vital Trends) │  │   Modal     │  │
-│  └───────────┬───────────┘  └───────────┬───────────┘  └──────┬──────┘  │
-└──────────────┼──────────────────────────┼─────────────────────┼─────────┘
-               │                          │                     │
-┌──────────────▼──────────────────────────▼─────────────────────▼─────────┐
-│                         DOMAIN & LOGIC SERVICES                         │
-│  ┌─────────────────────────┐  ┌──────────────────────────────────────┐  │
-│  │   LanguageService       │  │       OnDeviceLLMService             │  │
-│  │ • 22 Indian Languages   │  │ • HTTP Range Resumable Downloader    │  │
-│  │ • Clinical Dictionaries │  │ • GGUF Neural Model Runtime          │  │
-│  └─────────────────────────┘  └──────────────────────────────────────┘  │
-│  ┌─────────────────────────┐  ┌──────────────────────────────────────┐  │
-│  │ NEWS2 & Delta Engine    │  │     Sepsis Inference Service         │  │
-│  │ • Vital score triage    │  │ • Deterioration Risk % Prediction    │  │
-│  │ • Historical trajectory │  │ • Clinical Red Flag Alerting         │  │
-│  └─────────────────────────┘  └──────────────────────────────────────┘  │
-└──────────────────────────────┬──────────────────────────────────────────┘
-                               │
-┌──────────────────────────────▼──────────────────────────────────────────┐
-│                      DATA PERSISTENCE LAYER (LOCAL)                     │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │                    LocalDBService (SQLite)                        │  │
-│  │ • `families` table (Head of household, Ward, Village relation)    │  │
-│  │ • `members` table (Demographics, ABHA ID, Pregnancy, Chronic)     │  │
-│  │ • `vitals` table (BP, HR, SpO2, Temp, Glucose, RR, NEWS2)         │  │
-│  │ • `jurisdictions` table (National > State > District > PHC tree)  │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 3. Directory & Folder Structure
-
-```
-flutter_app/
-├── lib/
-│   ├── core/                        # Application Core
-│   │   ├── constants/               # System thresholds, URLs, storage keys
-│   │   │   └── app_constants.dart
-│   │   └── theme/                   # Material 3 Design System
-│   │       └── app_theme.dart
-│   │
-│   ├── models/                      # Strongly-Typed Domain Entities
-│   │   ├── clinical_models.dart     # NEWS2ScoreResult, SepsisRiskResult, VitalRecordModel
-│   │   ├── family_model.dart        # FamilyModel & metadata
-│   │   ├── member_model.dart        # MemberModel demographic & clinical entity
-│   │   ├── jurisdiction_model.dart  # Master Administrative Hierarchy
-│   │   └── models.dart              # Barrel export
-│   │
-│   ├── services/                    # Business Logic & Infrastructure Services
-│   │   ├── local_db_service.dart    # SQLite persistence & migrations
-│   │   ├── on_device_llm_service.dart# Resumable GGUF downloader & reasoning engine
-│   │   ├── language_service.dart    # 22 Scheduled Indian Languages + English
-│   │   ├── news2_delta_service.dart # Longitudinal physiological delta calculator
-│   │   ├── sepsis_inference_service.dart # Sepsis risk & deterioration ML engine
-│   │   └── app_update_service.dart  # In-app update & integrity verification
-│   │
-│   ├── widgets/                     # Reusable UI Component Library
-│   │   ├── language_switcher_widget.dart
-│   │   ├── qwen_ai_chat_modal.dart  # Universal T7 Clinical AI Chatbot
-│   │   └── searchable_dropdown.dart # Filterable jurisdiction & selection dropdown
-│   │
-│   ├── screens/                     # Feature Screens
-│   │   ├── login_screen.dart        # Role-based authentication
-│   │   ├── language_setup_screen.dart # First-run regional language onboarding
-│   │   ├── asha_home_screen.dart    # Field dashboard & active AI banner
-│   │   ├── family_detail_screen.dart# Household registry
-│   │   ├── member_detail_screen.dart# Clinical charts, NEWS2 & vital recorder
-│   │   ├── admin_dashboard.dart     # Administrative analytics
-│   │   ├── admin_settings_screen.dart
-│   │   └── master_jurisdiction_editor_screen.dart # Administrative hierarchy editor
-│   │
-│   └── main.dart                    # Application bootstrap & dependency initialization
+```text
+┌──────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                       CLIENT TIER                                            │
+│  ┌─────────────────────────────────────┐      ┌───────────────────────────────────────────┐  │
+│  │         Flutter Mobile App          │      │            Next.js Web Portal             │  │
+│  │        (ASHA Offline Client)        │      │         (Admin / Hospital Verifier)       │  │
+│  │                                     │      │                                           │  │
+│  │ • Local SQLite (chain_outbox queue) │      │ • Dashboard analytics                     │  │
+│  │ • On-Device Qwen GGUF LLM           │      │ • Supabase Real-time Subscriptions        │  │
+│  │ • Keccak-256 Hashing Engine         │      │ • BridgeKey / MetaMask Integration        │  │
+│  │ • Patient QR Code Identity Hash     │      │ • Trigger /batch-attest to Relayer        │  │
+│  └──────────────────┬──────────────────┘      └─────────────────────┬─────────────────────┘  │
+└─────────────────────┼───────────────────────────────────────────────┼────────────────────────┘
+            Offline-to-Online Sync                             Admin API Calls
+┌─────────────────────▼───────────────────────────────────────────────▼────────────────────────┐
+│                               RELAYER & API TIER (Python)                                    │
+│  ┌────────────────────────────────────────────────────────────────────────────────────────┐  │
+│  │                              FastAPI Blockchain Relayer                                │  │
+│  │ • Validates Zero-PII Hashes from Mobile      • Prepares Payload for Smart Contract     │  │
+│  │ • Interacts with Supabase (Database)         • Signs Tx with ADMIN_PRIVATE_KEY         │  │
+│  │ • Acts as a Gas Station for ASHAs            • Broadcasts to MST RPC                   │  │
+│  └───────────────────────────────────┬──────────────────────────────┬─────────────────────┘  │
+└──────────────────────────────────────┼──────────────────────────────┼────────────────────────┘
+                                       │                              │
+┌──────────────────────────────────────▼────────────┐  ┌──────────────▼────────────────────────┐
+│                 DATA PERSISTENCE                  │  │          MST EVM BLOCKCHAIN           │
+│  ┌─────────────────────────────────────────────┐  │  │  ┌─────────────────────────────────┐  │
+│  │           Supabase (PostgreSQL)             │  │  │  │         CareCoin.sol            │  │
+│  │ • Cloud Sync for Medical Records            │  │  │  │  (ERC-20 Token for Incentives)  │  │
+│  │ • Row-Level Security (RLS) policies         │  │  │  ├─────────────────────────────────┤  │
+│  │ • User Authentication & Roles               │  │  │  │       StipendVault.sol          │  │
+│  │ • Mapping: ABHA ID <-> Wallet <-> Clinics   │  │  │  │  (Escrow & Batch Verification)  │  │
+│  └─────────────────────────────────────────────┘  │  │  └─────────────────────────────────┘  │
+└───────────────────────────────────────────────────┘  └───────────────────────────────────────┘
 ```
 
 ---
 
-## 4. On-Device LLM & Multilingual Inference Pipeline
+## 3. Detailed Component Specifications
 
-### 4.1 Resumable HTTP Chunk Downloader
-The GGUF model weights (~1.05 GB) are downloaded via an enterprise-grade streaming engine:
-* **HTTP Range Requests**: Implements `Range: bytes=<existing_bytes>-` to allow pausing and resuming at exact byte boundaries.
-* **Redirect Preservation**: Handles HTTP 301/302/307 CDN redirects while forwarding the Range header to the final storage node.
-* **Crash-Resilience**: Incomplete downloads persist in a `.tmp` file. If the app is closed or killed, next startup automatically detects existing progress and enables immediate one-tap resuming.
-* **Storage Reclaim**: Complete deletion of local GGUF weights and partial temp files at any time via the UI.
+### 3.1 Flutter Mobile App (The Edge Node)
+* **Architecture**: Offline-first MVVM.
+* **Database**: Encrypted SQLite (sqflite). Stores families, members, vitals, and the `chain_outbox`.
+* **Clinical Intelligence**:
+  * **NEWS2 Scoring**: National Early Warning Score 2 algorithms calculate acute illness severity dynamically.
+  * **Sepsis AI**: On-device statistical models assess deterioration risk using physiological deltas.
+  * **Generative LLM**: `Qwen3-1.7B-Q4_K_M.gguf` (~1.05 GB) running locally via `fllama`/`langchain`. Explains medical conditions in 22 Indian languages.
+* **Blockchain Responsibilities**:
+  * Calculates `beneficiaryCommitment` (a hash of the patient's ABHA/ID + a salt) to embed in a QR code.
+  * Applies `keccak256` hashing to the exact JSON schema of patient vitals locally.
+  * Queues hashes in `chain_outbox` until connectivity is restored.
 
-### 4.2 Dual-Layer AI Architecture
-```
-User Query / Patient Vitals
-          │
-          ▼
-┌────────────────────────────────────────────────────────┐
-│  Layer 1: On-Device Generative Engine                  │
-│  • Qwen3-1.7B quantized GGUF weights                  │
-│  • Open-ended contextual natural language synthesis   │
-└─────────────────────────┬──────────────────────────────┘
-                          │
-                          ▼
-┌────────────────────────────────────────────────────────┐
-│  Layer 2: Clinical Safety & Protocol Guardrails        │
-│  • National Health Mission (NHM) / WHO Guidelines      │
-│  • Standard Emergency Antipyretic & ORS Dosages        │
-│  • 108 Emergency Ambulance Red-Flag Detection          │
-└─────────────────────────┬──────────────────────────────┘
-                          │
-                          ▼
-4-Part Actionable Clinical Consultation (Translated to Active Language)
-```
+### 3.2 FastAPI Relayer (The Gas Station)
+* **Architecture**: Stateless Python microservice.
+* **Why it exists**: ASHA workers lack crypto literacy and funds. They cannot pay gas fees for blockchain transactions.
+* **Mechanism**:
+  * Receives signed hashes from the mobile app.
+  * Uses `web3.py` and an injected `ADMIN_PRIVATE_KEY` (holding $MSTC) to format and sign the transaction.
+  * Broadcasts the transaction to the MST testnet, completely abstracting the blockchain complexity from the end user.
+* **Batching**: Exposes `/batch-attest` to allow the Admin portal to process up to 50 queued visits in a single transaction, reducing network load and gas costs by ~90%.
 
----
+### 3.3 MST Blockchain Smart Contracts
+* **Network**: MST Testnet (EVM Compatible, Cancun/Paris architecture).
+* **CareCoin.sol**: An ERC-20 compliant token contract. Represents the monetary stipend the ASHA worker earns per verified visit.
+* **StipendVault.sol**: The master escrow contract. 
+  * Holds a reserve of CareCoins.
+  * `batchAttest()`: Accepts an array of worker addresses and `taskHash` arrays.
+  * Maps `executedTasks[taskHash] = true` to mathematically prevent replay attacks or duplicate paperwork fraud.
+  * Transfers CareCoins to the ASHA worker's wallet instantly upon execution.
 
-## 5. Clinical Decision Support Specifications
+### 3.4 Supabase (PostgreSQL Cloud)
+* **Role**: Primary cloud synchronization engine for human-readable data.
+* **Mechanics**:
+  * The Flutter app syncs the actual vital statistics (Heart rate, BP, glucose) to Supabase when online.
+  * Supabase handles user authentication (Admin vs. ASHA).
+  * Data is protected by strict Row-Level Security (RLS). ASHA workers can only read/write their assigned village; Admins can see aggregated district data.
 
-### 5.1 NEWS2 Scoring Engine
-Implements the National Early Warning Score 2 (NEWS2) standard across 6 physiological parameters:
-1. **Respiration Rate**: Normal (12–20 bpm), Alert (< 8 or > 25 bpm).
-2. **Oxygen Saturations (SpO2)**: Normal (≥ 96%), Moderate (94–95%), Critical (≤ 91%).
-3. **Systolic Blood Pressure**: Normal (111–219 mmHg), Critical (≤ 90 mmHg).
-4. **Pulse / Heart Rate**: Normal (51–90 bpm), Critical (< 40 or > 130 bpm).
-5. **Temperature**: Normal (36.1–38.0°C / 96.9–100.4°F), High (≥ 39.1°C / 102.4°F).
-6. **Blood Glucose & Consciousness**: Rapid hypoglycemia alerts (< 70 mg/dL).
-
-### 5.2 Longitudinal Delta Tracking
-Calculates vital changes between consecutive visits:
-$$\Delta \text{Parameter} = \text{Current Value} - \text{Previous Value}$$
-Highlights acute trends (e.g., sudden BP drop + heart rate spike indicative of impending septic shock).
+### 3.5 Next.js Web Portal (The Verifier Dashboard)
+* **Role**: The interface for PHC Hospital Admins and State Health Directors.
+* **Capabilities**:
+  * Pulls pending records from Supabase.
+  * Scans the Patient's QR code when the patient physically visits the PHC for a referral.
+  * Clicks "Approve Batch" to trigger the FastAPI Relayer, which finalizes the transaction on the blockchain and releases the funds.
 
 ---
 
-## 6. Security, Compliance & Privacy
+## 4. Security, Privacy & The "Zero-PII" Protocol
 
-* **Zero Telemetry Leakage**: No patient names, ABHA numbers, or vital readings are transmitted to external servers.
-* **100% On-Device Processing**: Sepsis ML inference, NEWS2 calculations, and LLM generative advice execute locally on mobile CPU/GPU.
-* **ACID SQLite Transactions**: Database writes use parameter binding and transaction envelopes to prevent database corruption during sudden battery exhaustion.
+### 4.1 HIPAA/ABHA Compliant Hashing
+The core principle of HealthVault is that **no patient name, ID, or raw clinical data ever touches a public blockchain**.
+1. **The Formula**: `taskHash = keccak256( beneficiaryCommitment + task_type + timestamp + keccak256(vitals_json) )`.
+2. **The Result**: The blockchain only records a random-looking 32-byte string (e.g., `0x4f8b...`). 
+3. **Verification**: If an auditor wants to verify the data later, they must possess the raw SQLite/Supabase data. Running the hash algorithm on the raw data will produce the exact same `taskHash` found on the blockchain, proving the data was not tampered with.
+
+### 4.2 Mathematical Anti-Fraud
+* **Phantom Paperwork**: ASHA workers cannot submit fake records for stipends. The `StipendVault.sol` contract registers every `taskHash`. Submitting the same hash twice results in an immediate EVM revert (`Duplicate visit proof: already claimed`).
+* **Relay Rate-Limiting**: The FastAPI relayer blocks excessive requests from a single worker ID, preventing DDoS or brute-force stipend draining.
+
+---
+
+## 5. Directory & Repository Structure
+
+```
+T7_HealthVault/
+├── flutter_app/                     # Flutter Edge Client
+│   ├── lib/
+│   │   ├── services/
+│   │   │   ├── blockchain_service.dart # Hashing & Outbox management
+│   │   │   ├── local_db_service.dart   # SQLite initialization
+│   │   │   ├── on_device_llm_service.dart # GGUF neural engine
+│   │   │   └── sepsis_inference_service.dart
+│   │   ├── screens/
+│   │   │   ├── qr_screen.dart          # Identity QR generator
+│   │   │   ├── asha_home_screen.dart   
+│   │   │   └── member_detail_screen.dart # EHR view with Chain Badges
+│   │   └── models/
+│
+├── backend/                         # FastAPI Meta-Tx Relayer
+│   ├── main.py                      # REST endpoints and Web3 logic
+│   ├── hasher.py                    # Reference Keccak-256 implementation
+│   ├── requirements.txt
+│   └── Dockerfile
+│
+├── blockchain/                      # Hardhat Smart Contracts (MST Testnet)
+│   ├── contracts/
+│   │   ├── CareCoin.sol             
+│   │   └── StipendVault.sol         
+│   ├── test/
+│   │   └── healthvault.test.js      # Comprehensive Mocha/Chai EVM tests
+│   ├── scripts/
+│   │   └── deploy.js                # Deployment pipeline
+│   └── hardhat.config.js
+│
+└── web_app/                         # Next.js Verifier Dashboard (Pending)
+    ├── src/
+    │   ├── app/                     # Next 14 App Router
+    │   ├── components/
+    │   └── lib/supabase.ts          # Supabase client instantiation
+    ├── package.json
+    └── tailwind.config.ts
+```
