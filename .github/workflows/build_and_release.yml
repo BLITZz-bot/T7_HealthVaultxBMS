@@ -54,7 +54,7 @@ jobs:
       - name: Build Android Release APK
         run: |
           cd flutter_app
-          flutter build apk --release --build-name="${{ steps.vars.outputs.version }}" --build-number="${{ github.run_number }}"
+          flutter build apk --release --target-platform android-arm64 --build-name="${{ steps.vars.outputs.version }}" --build-number="${{ github.run_number }}"
 
       - name: Upload Release APK Asset to GitHub Releases
         uses: softprops/action-gh-release@v2
