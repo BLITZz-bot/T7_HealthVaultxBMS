@@ -64,4 +64,6 @@ flutter_app/dart_defines.json
 # Node / web (phc_admin/.gitignore has the full list)
 node_modules/
 .vercel/
+release/
+*.apk
 
