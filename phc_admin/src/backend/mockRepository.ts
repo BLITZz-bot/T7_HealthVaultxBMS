@@ -76,6 +76,16 @@ export const mockRepository: PhcRepository = {
     }
   },
 
+  async deleteWorker(phcId, workerId) {
+    assertPhc(phcId);
+    await delay();
+    const idx = db.workers.findIndex((w) => w.id === workerId);
+    if (idx !== -1) {
+      db.workers.splice(idx, 1);
+      emit('profiles');
+    }
+  },
+
   async listHouseholds(phcId) {
     assertPhc(phcId);
     await delay();

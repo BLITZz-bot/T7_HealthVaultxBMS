@@ -110,6 +110,17 @@ export const supabaseRepository: PhcRepository = {
     if (error) throw new Error(error.message);
   },
 
+  async deleteWorker(phcId, workerId) {
+    const sb = getSupabase();
+    const { error } = await sb
+      .from('profiles')
+      .delete()
+      .eq('id', workerId)
+      .eq('phc_id', phcId);
+
+    if (error) throw new Error(error.message);
+  },
+
   async listHouseholds(phcId) {
     // TODO: server-side pagination + search once a PHC has thousands of households.
     const rows = unwrap(

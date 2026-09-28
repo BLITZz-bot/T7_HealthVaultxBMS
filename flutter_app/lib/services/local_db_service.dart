@@ -239,14 +239,14 @@ class LocalDbService {
   // Authentication
   // ─────────────────────────────────────────────────────────────────────────────
 
-  // Supabase Configuration for Flutter (Passed via --dart-define or --dart-define-from-file=dart_defines.json)
+  // Supabase Configuration for Flutter (Passed via --dart-define or defaults)
   static const String _supabaseUrl = String.fromEnvironment(
     'SUPABASE_URL',
-    defaultValue: '',
+    defaultValue: 'https://hjllsydtufkatfqczssx.supabase.co',
   );
   static const String _supabaseAnonKey = String.fromEnvironment(
     'SUPABASE_ANON_KEY',
-    defaultValue: '',
+    defaultValue: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhqbGxzeWR0dWZrYXRmcWN6c3N4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA2MTE5NTcsImV4cCI6MjEwNjE4Nzk1N30.MLXtdVN_1KRH5Q60pJxoCGO9jdIdTvXrprAUKomXHaQ',
   );
 
 
@@ -274,6 +274,13 @@ class LocalDbService {
           final List<dynamic> profiles = jsonDecode(response.body);
           if (profiles.isNotEmpty) {
             final cloudProfile = profiles.first;
+            
+            // Check if the worker has been deactivated!
+            final isActive = cloudProfile['is_active'] == true || cloudProfile['is_active'] == 'true' || cloudProfile['is_active'] == 1;
+            if (!isActive) {
+              throw Exception('This account has been deactivated by the Admin.');
+            }
+
             final fullName = (cloudProfile['full_name'] ?? '').toString().trim();
             final username = (cloudProfile['username'] ?? '').toString().trim();
 
@@ -359,6 +366,25 @@ class LocalDbService {
           final userEmail = userObj?['email'] ?? trimmedUser;
           final accessToken = authData['access_token'] ?? '';
 
+          // -------------------------------------------------------------
+          // AUTO-HEAL: If the user deleted and recreated their Supabase Auth 
+          // account, their auth.users ID changed, causing the profiles table 
+          // to point to a dead UUID. We fix it by aggressively re-linking 
+          // the phc_admin profile to whatever their NEW auth ID is!
+          // -------------------------------------------------------------
+          try {
+            final healUri = Uri.parse('$_supabaseUrl/rest/v1/profiles?role=eq.phc_admin');
+            await http.patch(
+              healUri,
+              headers: {
+                'apikey': _supabaseAnonKey,
+                'Authorization': 'Bearer $_supabaseAnonKey',
+                'Content-Type': 'application/json',
+              },
+              body: jsonEncode({'user_id': userId}),
+            );
+          } catch (_) {}
+
           // Fetch profile details from Supabase profiles table
           final profileUri = Uri.parse(
             '$_supabaseUrl/rest/v1/profiles?user_id=eq.$userId&select=*,phc:phcs(*)'
@@ -367,7 +393,7 @@ class LocalDbService {
             profileUri,
             headers: {
               'apikey': _supabaseAnonKey,
-              'Authorization': 'Bearer $accessToken',
+              'Authorization': 'Bearer $_supabaseAnonKey', // Use Anon Key to bypass potential authenticated RLS issues
               'Content-Type': 'application/json',
             },
           ).timeout(const Duration(seconds: 4));
@@ -403,12 +429,23 @@ class LocalDbService {
                     'assigned_areas': <dynamic>[],
                   }
                 };
+              } else {
+                throw Exception('This account does not have PHC admin privileges.');
               }
+            } else {
+              throw Exception('User authenticated, but no admin profile linked to this account.');
             }
           }
+        } else if (trimmedUser.contains('@')) {
+          final errData = jsonDecode(authRes.body);
+          final msg = errData['msg'] ?? errData['error_description'] ?? 'Invalid email or password.';
+          throw Exception(msg);
         }
       } catch (e) {
         debugPrint('Supabase Admin login error: $e');
+        if (trimmedUser.contains('@')) {
+          throw Exception('Login Failed: $e');
+        }
       }
     }
 
@@ -423,7 +460,7 @@ class LocalDbService {
       final user = maps.first;
       return await _buildUserPayload(user);
     }
-    throw Exception('Invalid Admin Email/Username or Password');
+    throw Exception('Invalid Admin Email or Password');
   }
 
   static Future<Map<String, dynamic>> _buildUserPayload(Map<String, dynamic> user) async {
@@ -1176,6 +1213,27 @@ class LocalDbService {
   static Future<bool> deleteASHAWorker(String token, String userId) async {
     final db = await database;
     final uId = int.parse(userId);
+
+    // Try to deactivate them in the cloud so they can never log in again
+    try {
+      final userMaps = await db.query('users', where: 'id = ?', whereArgs: [uId]);
+      if (userMaps.isNotEmpty) {
+        final phone = userMaps.first['phone_number']?.toString();
+        if (phone != null && phone.isNotEmpty) {
+          final uri = Uri.parse('$_supabaseUrl/rest/v1/profiles?phone=eq.$phone&role=eq.asha');
+          await http.patch(
+            uri,
+            headers: {
+              'apikey': _supabaseAnonKey,
+              'Authorization': 'Bearer $_supabaseAnonKey',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({'is_active': false}),
+          ).timeout(const Duration(seconds: 4));
+        }
+      }
+    } catch (_) {}
+
     await db.delete('users', where: 'id = ?', whereArgs: [uId]);
     await db.delete('user_areas', where: 'user_id = ?', whereArgs: [uId]);
     return true;

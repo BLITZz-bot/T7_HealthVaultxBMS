@@ -155,9 +155,25 @@ export function WorkersPage() {
                           <button
                             type="button"
                             onClick={() => handleToggleStatus(w.id, w.isActive)}
-                            className="text-xs font-medium text-slate-500 hover:text-slate-800"
+                            className="text-xs font-medium text-slate-500 hover:text-slate-800 mr-3"
                           >
                             {w.isActive ? 'Deactivate' : 'Activate'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (confirm('Are you sure you want to permanently delete this worker?')) {
+                                try {
+                                  await repository.deleteWorker(session.phcId, w.id);
+                                  workers.reload();
+                                } catch (err: any) {
+                                  alert(err.message || 'Failed to delete worker');
+                                }
+                              }
+                            }}
+                            className="text-xs font-medium text-red-500 hover:text-red-700"
+                          >
+                            Delete
                           </button>
                         </td>
                       </tr>
