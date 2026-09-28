@@ -29,12 +29,16 @@ class AppUpdateService {
   static String get currentVersion => _cachedVersion;
 
   static const String githubOwner = 'BLITZz-bot';
-  static const String githubRepo = 'T7-HealthVault';
+  static const String githubRepo = 'T7_HealthVaultxBMS';
+  static const String fallbackRepo = 'T7-HealthVault';
 
-  static const String latestReleaseApiUrl =
+  static String get latestReleaseApiUrl =>
       'https://api.github.com/repos/$githubOwner/$githubRepo/releases/latest';
 
-  static const String fallbackApkDownloadUrl =
+  static String get fallbackReleaseApiUrl =>
+      'https://api.github.com/repos/$githubOwner/$fallbackRepo/releases/latest';
+
+  static String get fallbackApkDownloadUrl =>
       'https://github.com/$githubOwner/$githubRepo/releases/latest/download/app-release.apk';
 
   /// Initialize package info dynamically on app startup
@@ -118,10 +122,17 @@ class AppUpdateService {
   static Future<AppUpdateInfo?> checkLatestRelease() async {
     try {
       final curVersion = await getCurrentVersion();
-      final response = await http.get(
+      var response = await http.get(
         Uri.parse(latestReleaseApiUrl),
         headers: {'Accept': 'application/vnd.github.v3+json'},
       ).timeout(const Duration(seconds: 8));
+
+      if (response.statusCode != 200) {
+        response = await http.get(
+          Uri.parse(fallbackReleaseApiUrl),
+          headers: {'Accept': 'application/vnd.github.v3+json'},
+        ).timeout(const Duration(seconds: 8));
+      }
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
