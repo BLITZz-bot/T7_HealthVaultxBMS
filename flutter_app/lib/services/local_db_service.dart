@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../data/india_data.dart';
@@ -236,12 +239,91 @@ class LocalDbService {
   // Authentication
   // ─────────────────────────────────────────────────────────────────────────────
 
+  // Supabase Configuration for Flutter (Passed via --dart-define or --dart-define-from-file=dart_defines.json)
+  static const String _supabaseUrl = String.fromEnvironment(
+    'SUPABASE_URL',
+    defaultValue: '',
+  );
+  static const String _supabaseAnonKey = String.fromEnvironment(
+    'SUPABASE_ANON_KEY',
+    defaultValue: '',
+  );
+
+
   static Future<Map<String, dynamic>> loginASHA(String name, String phoneNumber) async {
     final db = await database;
-    // Match by: full name (first + last), first name only, OR username (login name)
+    final trimmedName = name.trim();
+    final trimmedPhone = phoneNumber.trim();
+
+    // 1. If Supabase credentials are configured and device is online, attempt Cloud Verification
+    if (_supabaseUrl.isNotEmpty && _supabaseAnonKey.isNotEmpty) {
+      try {
+        final uri = Uri.parse(
+          '$_supabaseUrl/rest/v1/profiles?role=eq.asha&phone=eq.$trimmedPhone&select=*'
+        );
+        final response = await http.get(
+          uri,
+          headers: {
+            'apikey': _supabaseAnonKey,
+            'Authorization': 'Bearer $_supabaseAnonKey',
+            'Content-Type': 'application/json',
+          },
+        ).timeout(const Duration(seconds: 4));
+
+        if (response.statusCode == 200) {
+          final List<dynamic> profiles = jsonDecode(response.body);
+          if (profiles.isNotEmpty) {
+            final cloudProfile = profiles.first;
+            final fullName = (cloudProfile['full_name'] ?? '').toString().trim();
+            final username = (cloudProfile['username'] ?? '').toString().trim();
+
+            // Match name (full, first, or username)
+            if (fullName.toLowerCase() == trimmedName.toLowerCase() ||
+                fullName.toLowerCase().startsWith(trimmedName.toLowerCase()) ||
+                username.toLowerCase() == trimmedName.toLowerCase()) {
+              
+              // Ensure this cloud worker exists in the local SQLite database
+              final localMatches = await db.query(
+                'users',
+                where: 'phone_number = ? AND role = ?',
+                whereArgs: [trimmedPhone, 'asha'],
+              );
+
+              if (localMatches.isEmpty) {
+                final names = fullName.split(' ');
+                final fName = names.isNotEmpty ? names.first : trimmedName;
+                final lName = names.length > 1 ? names.sublist(1).join(' ') : '';
+                await db.insert('users', {
+                  'username': username.isNotEmpty ? username : trimmedName.toLowerCase().replaceAll(' ', '_'),
+                  'first_name': fName,
+                  'last_name': lName,
+                  'role': 'asha',
+                  'phone_number': trimmedPhone,
+                });
+              }
+
+              // Load and return user payload from local DB
+              final refreshed = await db.query(
+                'users',
+                where: 'phone_number = ? AND role = ?',
+                whereArgs: [trimmedPhone, 'asha'],
+              );
+              if (refreshed.isNotEmpty) {
+                return await _buildUserPayload(refreshed.first);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        // Cloud timeout or offline: silently fall back to local SQLite below
+        // print('Supabase verification fallback: $e');
+      }
+    }
+
+    // 2. Offline-First Fallback: Local SQLite check
     final List<Map<String, dynamic>> maps = await db.rawQuery(
       "SELECT * FROM users WHERE (first_name || ' ' || last_name = ? OR first_name = ? OR username = ?) AND phone_number = ? AND role = 'asha'",
-      [name, name, name, phoneNumber],
+      [trimmedName, trimmedName, trimmedName, trimmedPhone],
     );
     if (maps.isNotEmpty) {
       final user = maps.first;
@@ -251,17 +333,97 @@ class LocalDbService {
   }
 
   static Future<Map<String, dynamic>> loginAdmin(String username, String password) async {
+    final trimmedUser = username.trim();
+    final trimmedPass = password.trim();
+
+    // 1. Online check against live Supabase Auth
+    if (_supabaseUrl.isNotEmpty && _supabaseAnonKey.isNotEmpty) {
+      try {
+        final authUri = Uri.parse('$_supabaseUrl/auth/v1/token?grant_type=password');
+        final authRes = await http.post(
+          authUri,
+          headers: {
+            'apikey': _supabaseAnonKey,
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'email': trimmedUser,
+            'password': trimmedPass,
+          }),
+        ).timeout(const Duration(seconds: 5));
+
+        if (authRes.statusCode == 200) {
+          final authData = jsonDecode(authRes.body);
+          final userObj = authData['user'];
+          final userId = userObj?['id'];
+          final userEmail = userObj?['email'] ?? trimmedUser;
+          final accessToken = authData['access_token'] ?? '';
+
+          // Fetch profile details from Supabase profiles table
+          final profileUri = Uri.parse(
+            '$_supabaseUrl/rest/v1/profiles?user_id=eq.$userId&select=*,phc:phcs(*)'
+          );
+          final profileRes = await http.get(
+            profileUri,
+            headers: {
+              'apikey': _supabaseAnonKey,
+              'Authorization': 'Bearer $accessToken',
+              'Content-Type': 'application/json',
+            },
+          ).timeout(const Duration(seconds: 4));
+
+          if (profileRes.statusCode == 200) {
+            final List<dynamic> profiles = jsonDecode(profileRes.body);
+            if (profiles.isNotEmpty) {
+              final p = profiles.first;
+              final role = (p['role'] ?? '').toString();
+              if (role == 'phc_admin' || role == 'medical_officer' || role == 'admin' || role == 'superuser') {
+                final db = await database;
+                // Upsert admin into local SQLite users table so offline cache works
+                await db.rawInsert('''
+                  INSERT OR REPLACE INTO users (id, username, password, first_name, last_name, role)
+                  VALUES (1, ?, ?, ?, '', 'superuser')
+                ''', [userEmail, trimmedPass, p['full_name'] ?? 'Admin']);
+
+                return {
+                  'token': _generateToken(1),
+                  'user': {
+                    'id': 1,
+                    'username': p['full_name'] ?? userEmail,
+                    'first_name': p['full_name'] ?? 'Admin',
+                    'last_name': '',
+                    'email': userEmail,
+                    'phone_number': p['phone'] ?? '',
+                    'role': 'superuser',
+                    'phc_id': p['phc_id'],
+                    'phc_name': p['phc']?['name'] ?? 'PHC',
+                    'state_name': p['phc']?['state'] ?? 'N/A',
+                    'district_names': [p['phc']?['district'] ?? 'N/A'],
+                    'area_names': <String>[],
+                    'assigned_areas': <dynamic>[],
+                  }
+                };
+              }
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('Supabase Admin login error: $e');
+      }
+    }
+
+    // 2. Offline SQLite fallback
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query(
       'users',
       where: 'username = ? AND password = ?',
-      whereArgs: [username, password],
+      whereArgs: [trimmedUser, trimmedPass],
     );
     if (maps.isNotEmpty) {
       final user = maps.first;
       return await _buildUserPayload(user);
     }
-    throw Exception('Invalid Admin Username or Password');
+    throw Exception('Invalid Admin Email/Username or Password');
   }
 
   static Future<Map<String, dynamic>> _buildUserPayload(Map<String, dynamic> user) async {

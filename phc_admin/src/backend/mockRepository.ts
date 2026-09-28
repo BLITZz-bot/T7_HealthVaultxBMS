@@ -48,6 +48,34 @@ export const mockRepository: PhcRepository = {
     return clone(db.workers);
   },
 
+  async createWorker(phcId, input) {
+    assertPhc(phcId);
+    await delay();
+    const fullName = `${input.firstName.trim()} ${input.lastName.trim()}`.trim();
+    const newWorker = {
+      id: `w-${Date.now()}`,
+      fullName,
+      phone: input.phone.trim(),
+      isActive: true,
+      lastSyncAt: null,
+      householdCount: 0,
+      villageNames: input.villageOrWard ? [input.villageOrWard.trim()] : [],
+    };
+    db.workers.unshift(newWorker);
+    emit('profiles');
+    return clone(newWorker);
+  },
+
+  async toggleWorkerStatus(phcId, workerId, isActive) {
+    assertPhc(phcId);
+    await delay();
+    const target = db.workers.find((w) => w.id === workerId);
+    if (target) {
+      target.isActive = isActive;
+      emit('profiles');
+    }
+  },
+
   async listHouseholds(phcId) {
     assertPhc(phcId);
     await delay();

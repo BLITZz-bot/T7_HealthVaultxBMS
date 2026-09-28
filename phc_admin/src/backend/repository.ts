@@ -5,6 +5,7 @@ import type {
   DashboardStats,
   Household,
   LiveTable,
+  NewAshaWorker,
   NewVisitTask,
   Referral,
   ReferralStatus,
@@ -23,6 +24,8 @@ export interface PhcRepository {
   getDashboardStats(phcId: string): Promise<DashboardStats>;
 
   listWorkers(phcId: string): Promise<AshaWorker[]>;
+  createWorker(phcId: string, input: NewAshaWorker): Promise<AshaWorker>;
+  toggleWorkerStatus(phcId: string, workerId: string, isActive: boolean): Promise<void>;
   listHouseholds(phcId: string): Promise<Household[]>;
 
   listAlerts(phcId: string, status: AlertStatus): Promise<Alert[]>;

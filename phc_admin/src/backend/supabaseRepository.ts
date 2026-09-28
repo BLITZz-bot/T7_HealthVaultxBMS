@@ -70,6 +70,46 @@ export const supabaseRepository: PhcRepository = {
     );
   },
 
+  async createWorker(phcId, input) {
+    const fullName = `${input.firstName.trim()} ${input.lastName.trim()}`.trim();
+    const sb = getSupabase();
+    const { data, error } = await sb
+      .from('profiles')
+      .insert({
+        phc_id: phcId,
+        role: 'asha',
+        full_name: fullName,
+        username: input.username.trim(),
+        phone: input.phone.trim(),
+        is_active: true,
+      })
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+
+    return {
+      id: String(data.id),
+      fullName: String(data.full_name),
+      phone: str(data.phone),
+      isActive: true,
+      lastSyncAt: null,
+      householdCount: 0,
+      villageNames: input.villageOrWard ? [input.villageOrWard.trim()] : [],
+    };
+  },
+
+  async toggleWorkerStatus(phcId, workerId, isActive) {
+    const sb = getSupabase();
+    const { error } = await sb
+      .from('profiles')
+      .update({ is_active: isActive })
+      .eq('id', workerId)
+      .eq('phc_id', phcId);
+
+    if (error) throw new Error(error.message);
+  },
+
   async listHouseholds(phcId) {
     // TODO: server-side pagination + search once a PHC has thousands of households.
     const rows = unwrap(
@@ -213,8 +253,9 @@ export const supabaseRepository: PhcRepository = {
 
   subscribe(phcId, table, onChange) {
     const sb = getSupabase();
+    const uniqueId = Math.random().toString(36).slice(2, 9);
     const channel = sb
-      .channel(`phc:${phcId}:${table}`)
+      .channel(`phc-${phcId}-${table}-${uniqueId}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table, filter: `phc_id=eq.${phcId}` },

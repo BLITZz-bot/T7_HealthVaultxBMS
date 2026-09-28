@@ -37,6 +37,17 @@ export interface AshaWorker {
   villageNames: string[];
 }
 
+export interface NewAshaWorker {
+  username: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  aadhaar?: string;
+  state?: string;
+  district?: string;
+  villageOrWard: string;
+}
+
 export interface Household {
   id: string;
   headName: string;

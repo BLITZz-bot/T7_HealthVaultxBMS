@@ -311,8 +311,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       else ...[
                         TextField(
                           controller: _usernameController,
+                          keyboardType: TextInputType.emailAddress,
                           decoration: InputDecoration(
-                            labelText: LanguageService.tr('admin_username'),
+                            labelText: 'Admin Email or Username',
                             prefixIcon: const Icon(Icons.account_circle_outlined, color: Color(0xFF00796B)),
                           ),
                         ),
