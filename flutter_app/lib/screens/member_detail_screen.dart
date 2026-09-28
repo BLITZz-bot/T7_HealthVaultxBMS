@@ -7,6 +7,8 @@ import '../services/news2_delta_service.dart';
 import '../services/sepsis_inference_service.dart';
 import '../services/language_service.dart';
 import '../services/on_device_llm_service.dart';
+import '../services/blockchain_service.dart';
+import 'qr_screen.dart';
 import '../widgets/language_switcher_widget.dart';
 import '../widgets/qwen_ai_chat_modal.dart';
 
@@ -718,10 +720,10 @@ class _MemberDetailScreenState extends State<MemberDetailScreen>
                   );
                   if (!mounted || !context.mounted) return;
                   Navigator.pop(ctx);
-                  if (ok && context.mounted) {
+                  if (ok > 0 && context.mounted) {
                     _refresh();
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(LanguageService.tr('save_record')), backgroundColor: Colors.green),
+                      SnackBar(content: Text(LanguageService.tr('save_record') ?? 'Record saved'), backgroundColor: Colors.green),
                     );
                   } else if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -811,6 +813,18 @@ class _MemberDetailScreenState extends State<MemberDetailScreen>
         ),
         actions: [
           const LanguageSwitcherWidget(),
+          IconButton(
+            icon: const Icon(Icons.qr_code, color: Colors.white, size: 20),
+            tooltip: 'Show Patient QR',
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.all(4),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => QrScreen(member: _currentMember, familySalt: "DEMO_SALT_123")),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.edit, color: Colors.white, size: 19),
             tooltip: 'Edit Member / Photo',
@@ -968,11 +982,18 @@ class _MemberDetailScreenState extends State<MemberDetailScreen>
     final isDevice = r['entry_source'] == 'device';
     final dateStr = _formatDate(r['recorded_at']);
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: BlockchainService.getChainStatus(r['id'] as int),
+      builder: (ctx, snap) {
+        final chainData = snap.data;
+        final isSynced = chainData != null && chainData['status'] == 'synced';
+        final isPending = chainData != null && chainData['status'] == 'pending';
+
+        return Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1024,6 +1045,29 @@ class _MemberDetailScreenState extends State<MemberDetailScreen>
                   backgroundColor: isDevice ? Colors.blue.shade50 : Colors.teal.shade50,
                   side: BorderSide(color: isDevice ? Colors.blueAccent.withValues(alpha: 0.4) : Colors.teal.withValues(alpha: 0.4)),
                 ),
+                if (isSynced || isPending) ...[
+                  const SizedBox(width: 6),
+                  Tooltip(
+                    message: isSynced ? 'Anchored to MST Blockchain\nTx: ${chainData['tx_hash']}' : 'Pending relay to blockchain',
+                    child: Chip(
+                      padding: EdgeInsets.zero,
+                      labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+                      label: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(isSynced ? Icons.link : Icons.schedule, size: 10, color: isSynced ? Colors.green : Colors.orange),
+                          const SizedBox(width: 2),
+                          Text(
+                            isSynced ? 'Anchored' : 'Queued',
+                            style: TextStyle(fontSize: 9, color: isSynced ? Colors.green.shade800 : Colors.orange.shade800, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                      backgroundColor: isSynced ? Colors.green.shade50 : Colors.orange.shade50,
+                      side: BorderSide(color: isSynced ? Colors.green.shade300 : Colors.orange.shade300),
+                    ),
+                  ),
+                ],
               ],
             ),
             const Divider(height: 16),
@@ -1054,6 +1098,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen>
           ],
         ),
       ),
+    );
+      },
     );
   }
 

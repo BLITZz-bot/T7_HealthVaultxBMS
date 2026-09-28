@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../data/india_data.dart';
+import 'blockchain_service.dart';
 
 class LocalDbService {
   static Database? _db;
@@ -18,7 +19,7 @@ class LocalDbService {
 
     return await openDatabase(
       path,
-      version: 5,
+      version: 6,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE users(
@@ -126,6 +127,20 @@ class LocalDbService {
           )
         ''');
 
+        await db.execute('''
+          CREATE TABLE chain_outbox(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id INTEGER,
+            medical_record_id INTEGER,
+            visit_key TEXT,
+            payload_hash TEXT,
+            status TEXT DEFAULT 'pending',
+            created_at TEXT,
+            synced_at TEXT,
+            tx_hash TEXT
+          )
+        ''');
+
         // Insert Default Master Admin
         await db.insert('users', {
           'username': 'admin',
@@ -179,6 +194,23 @@ class LocalDbService {
               await db.execute(q);
             } catch (_) {}
           }
+        }
+        if (oldVersion < 6) {
+          try {
+            await db.execute('''
+              CREATE TABLE chain_outbox(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                member_id INTEGER,
+                medical_record_id INTEGER,
+                visit_key TEXT,
+                payload_hash TEXT,
+                status TEXT DEFAULT 'pending',
+                created_at TEXT,
+                synced_at TEXT,
+                tx_hash TEXT
+              )
+            ''');
+          } catch (_) {}
         }
         // Repair/sanitize any legacy oversized base64 images that caused CursorWindow errors
         try {
@@ -556,7 +588,7 @@ class LocalDbService {
     };
   }
 
-  static Future<bool> addMedicalRecord({
+  static Future<int> addMedicalRecord({
     required String token,
     required String memberId,
     double? bloodSugarFasting,
@@ -573,7 +605,8 @@ class LocalDbService {
   }) async {
     final db = await database;
     final userId = _getUserIdFromToken(token);
-    await db.insert('medical_records', {
+    final recordedAt = DateTime.now().toUtc().toIso8601String();
+    final id = await db.insert('medical_records', {
       'member_id': int.parse(memberId),
       'recorded_by': userId,
       'blood_sugar_fasting': bloodSugarFasting,
@@ -587,9 +620,42 @@ class LocalDbService {
       'notes': notes,
       'entry_source': entrySource,
       'device_id': deviceId,
-      'recorded_at': DateTime.now().toUtc().toIso8601String(),
+      'recorded_at': recordedAt,
     });
-    return true;
+
+    final memberInfo = await db.query('members', columns: ['age'], where: 'id = ?', whereArgs: [int.parse(memberId)]);
+    int age = 0;
+    if (memberInfo.isNotEmpty) {
+      age = memberInfo.first['age'] as int;
+    }
+
+    double? mapVal;
+    if (bloodPressureSystolic != null && bloodPressureDiastolic != null) {
+      mapVal = bloodPressureDiastolic + ((bloodPressureSystolic - bloodPressureDiastolic) / 3.0);
+    }
+
+    try {
+      await BlockchainService.queueVitals(
+        memberId: int.parse(memberId),
+        medicalRecordId: id,
+        vitalsRecord: {
+          "hr": pulseRate,
+          "sbp": bloodPressureSystolic,
+          "dbp": bloodPressureDiastolic,
+          "map": mapVal,
+          "temp": temperature,
+          "spo2": spo2,
+          "resp": respiratoryRate,
+          "age": age,
+          "recorded_at": recordedAt,
+        },
+        familySalt: "DEMO_SALT_123",
+      );
+    } catch (e) {
+      print("Error queueing vitals to blockchain outbox: $e");
+    }
+
+    return id;
   }
 
   static String _calculateFlag(Map<String, dynamic> r) {
