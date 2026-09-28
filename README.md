@@ -301,6 +301,10 @@ T7_HealthVault/
 │   ├── requirements.txt                # Python ML Dependencies
 │   └── README.md                       # Model Pipeline Documentation
 │
+├── phc_admin/                          # PHC Admin Web Panel (React + Vite, deployed on Vercel)
+│   ├── supabase/migrations/            # Shared Supabase schema + RLS for app ↔ panel sync
+│   └── README.md                       # Setup, Vercel deploy & Supabase connection guide
+│
 └── README.md                           # Main Project Documentation (This File)
 ```
 
@@ -333,6 +337,13 @@ flutter build apk --release --obfuscate --split-debug-info=build/app/outputs/sym
 cd model_pipeline
 pip install -r requirements.txt
 python train_and_export.py
+```
+
+### 4. PHC Admin Web Panel
+```bash
+cd phc_admin
+npm install
+npm run dev        # demo mode with dummy login — see phc_admin/README.md
 ```
 
 ---

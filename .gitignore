@@ -57,3 +57,11 @@ build_symbols/
 llama_bin/
 *.gguf
 
+
+# Flutter build-time secrets (copy dart_defines.example.json → dart_defines.json)
+flutter_app/dart_defines.json
+
+# Node / web (phc_admin/.gitignore has the full list)
+node_modules/
+.vercel/
+
