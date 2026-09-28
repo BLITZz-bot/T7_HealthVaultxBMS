@@ -13,12 +13,14 @@ describe("HealthVault Trust Layer — Full Integration Tests", function () {
   const EXPECTED_HASH = "0x0713a9e100fc83fef75f58ca0176fbe06b44272f98ced343ca333a9e2dd0cf38";
   const TEST_RECORD_ROOT = ethers.keccak256(ethers.toUtf8Bytes(TEST_VITALS_CANONICAL));
 
-  const FAMILY_SALT     = "salt_abc_123";
-  const BENEFICIARY_ID  = "BEN_001";
-  const PATIENT_COMMIT  = ethers.keccak256(ethers.toUtf8Bytes(BENEFICIARY_ID + FAMILY_SALT));
-  const VISIT_PERIOD    = "2026-09";
-  const TASK_HOME_VISIT = 1;
-  const CRED_HASH       = ethers.keccak256(ethers.toUtf8Bytes("Bharath9876543210ABCD"));
+  const FAMILY_SALT        = "salt_abc_123";
+  const BENEFICIARY_ID     = "BEN_001";
+  const PATIENT_COMMIT     = ethers.keccak256(ethers.toUtf8Bytes(BENEFICIARY_ID + FAMILY_SALT));
+  const VISIT_PERIOD       = "2026-09";
+  const TASK_HOME_VISIT    = 1;
+  const TASK_ANC_CHECKUP   = 2;
+  const TASK_IMMUNIZATION  = 3;
+  const CRED_HASH          = ethers.keccak256(ethers.toUtf8Bytes("Bharath9876543210ABCD"));
 
   function makeVisitKey(commitment, taskType, period) {
     return ethers.keccak256(ethers.toUtf8Bytes(commitment + taskType.toString() + period));
@@ -38,6 +40,8 @@ describe("HealthVault Trust Layer — Full Integration Tests", function () {
 
     await careCoin.transfer(await stipendVault.getAddress(), ethers.parseEther("100000"));
     await stipendVault.setRate(TASK_HOME_VISIT, ethers.parseEther("10"));
+    await stipendVault.setRate(TASK_ANC_CHECKUP, ethers.parseEther("30"));
+    await stipendVault.setRate(TASK_IMMUNIZATION, ethers.parseEther("20"));
     await stipendVault.setHospital(hospital.address, true);
   });
 
@@ -177,10 +181,35 @@ describe("HealthVault Trust Layer — Full Integration Tests", function () {
         .to.be.revertedWith("StipendVault: duplicate visit");
     });
 
-    it("non-hospital cannot attest", async function () {
+    it("unauthorized stranger cannot attest", async function () {
       await stipendVault.connect(worker).submitVisit(visitKey, TASK_HOME_VISIT);
       await expect(stipendVault.connect(stranger).attestAndPay(visitKey))
-        .to.be.revertedWith("StipendVault: not authorized hospital");
+        .to.be.revertedWith("StipendVault: not authorized");
+    });
+
+    it("admin can attest directly without separate hospital wallet", async function () {
+      const before = await careCoin.balanceOf(worker.address);
+      await stipendVault.connect(worker).submitVisit(visitKey, TASK_HOME_VISIT);
+      await stipendVault.connect(deployer).attestAndPay(visitKey);
+      const after = await careCoin.balanceOf(worker.address);
+      expect(after - before).to.equal(ethers.parseEther("10"));
+    });
+
+    it("batchAttest approves an entire monthly survey batch in one transaction", async function () {
+      const visitKey2 = makeVisitKey(PATIENT_COMMIT, TASK_ANC_CHECKUP, "2026-09-02");
+      const visitKey3 = makeVisitKey(PATIENT_COMMIT, TASK_IMMUNIZATION, "2026-09-03");
+
+      await stipendVault.connect(worker).submitVisit(visitKey, TASK_HOME_VISIT);     // 10 CARE
+      await stipendVault.connect(worker).submitVisit(visitKey2, TASK_ANC_CHECKUP);   // 30 CARE
+      await stipendVault.connect(worker).submitVisit(visitKey3, TASK_IMMUNIZATION);  // 20 CARE
+
+      const before = await careCoin.balanceOf(worker.address);
+      // Admin batch-approves all 3 in a single on-chain transaction
+      await stipendVault.connect(deployer).batchAttest([visitKey, visitKey2, visitKey3]);
+      const after = await careCoin.balanceOf(worker.address);
+
+      // Total = 10 + 30 + 20 = 60 CARE
+      expect(after - before).to.equal(ethers.parseEther("60"));
     });
 
     it("revoked worker cannot submit", async function () {

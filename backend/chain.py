@@ -252,6 +252,12 @@ class ChainClient:
             "submittedAt": v[3],
         }
 
+    def batch_attest(self, visit_keys_hex: list[str]) -> str:
+        """Admin or authorized verifier batch attests visits and disburses CareCoin. Returns tx hash."""
+        keys = [bytes.fromhex(k.removeprefix("0x")) for k in visit_keys_hex]
+        fn = self.stipend_vault.functions.batchAttest(keys)
+        return self._send_tx(fn)
+
     # ─── CareCoin ──────────────────────────────────────────────────────────────
 
     def care_coin_balance(self, address: str) -> str:

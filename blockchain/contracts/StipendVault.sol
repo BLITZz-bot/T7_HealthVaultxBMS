@@ -105,11 +105,16 @@ contract StipendVault {
         emit VisitSubmitted(visitKey, msg.sender, taskType, uint64(block.timestamp));
     }
 
-    // ─── Hospital flow ────────────────────────────────────────────────────────
+    modifier onlyAuthorized() {
+        require(msg.sender == admin || hospitals[msg.sender], "StipendVault: not authorized");
+        _;
+    }
 
-    /// @notice Hospital attests a visit is real and triggers automatic CareCoin payment.
+    // ─── Attestation & Payout flow ──────────────────────────────────────────
+
+    /// @notice Attests a single visit and triggers CareCoin payment.
     /// @param visitKey Must match a previously submitted visit key.
-    function attestAndPay(bytes32 visitKey) external onlyHospital {
+    function attestAndPay(bytes32 visitKey) public onlyAuthorized {
         Visit storage v = visits[visitKey];
         require(v.worker != address(0), "StipendVault: visit not found");
         require(!v.paid,                "StipendVault: already paid");
@@ -123,6 +128,16 @@ contract StipendVault {
         );
 
         emit StipendPaid(visitKey, v.worker, payout, msg.sender);
+    }
+
+    /// @notice Batch attests multiple visits in a single transaction (monthly claim payout).
+    /// @dev Allows Admin / Verifier to approve an ASHA worker's monthly survey batch with 1 signature.
+    /// @param visitKeys Array of visit keys to attest and pay.
+    function batchAttest(bytes32[] calldata visitKeys) external onlyAuthorized {
+        require(visitKeys.length > 0, "StipendVault: empty batch");
+        for (uint256 i = 0; i < visitKeys.length; i++) {
+            attestAndPay(visitKeys[i]);
+        }
     }
 
     // ─── View helpers ─────────────────────────────────────────────────────────

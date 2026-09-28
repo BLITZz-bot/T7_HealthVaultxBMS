@@ -136,6 +136,11 @@ class VisitRequest(BaseModel):
     period:          str = Field(..., description="'YYYY-MM' e.g. '2026-09' — prevents same-month replay")
 
 
+class BatchAttestRequest(BaseModel):
+    visit_keys: list[str] = Field(..., description="List of visit keys (hex) to attest and pay in one batch")
+
+
+
 # ─── Routes ────────────────────────────────────────────────────────────────────
 
 @app.get("/health")
@@ -308,6 +313,37 @@ async def submit_visit(req: VisitRequest):
         "visit_key": vk_hex,
         "explorer":  f"https://mstscan.com/tx/{tx_hash}",
     }
+
+
+@app.post("/batch-attest")
+async def batch_attest_visits(
+    req: BatchAttestRequest,
+    x_admin_secret: str | None = Header(None),
+):
+    """
+    Admin: Batch-attests an ASHA worker's monthly survey batch in 1 on-chain transaction.
+    Transfers CareCoin rewards directly to worker wallets without bureaucratic delay.
+    """
+    _check_admin(x_admin_secret)
+
+    if chain is None:
+        raise HTTPException(status_code=503, detail="Relay in offline mode")
+
+    if not req.visit_keys:
+        raise HTTPException(status_code=400, detail="Empty visit keys list")
+
+    try:
+        tx_hash = chain.batch_attest(req.visit_keys)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Batch attest failed: {str(e)}")
+
+    return {
+        "status":         "success",
+        "tx_hash":        tx_hash,
+        "attested_count": len(req.visit_keys),
+        "explorer":       f"https://mstscan.com/tx/{tx_hash}",
+    }
+
 
 
 @app.get("/verify/{record_hash}")

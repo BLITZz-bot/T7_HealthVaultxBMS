@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: healthvault-relay
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    autoDeploy: true
+    envVars:
+      - key: MST_RPC_URL
+        value: https://testnetrpc.mstblockchain.com
+      - key: CHAIN_ID
+        value: "91562037"
+      - key: RELAY_PRIVATE_KEY
+        sync: false
+      - key: WORKER_REGISTRY_ADDRESS
+        sync: false
+      - key: CARECOIN_ADDRESS
+        sync: false
+      - key: STIPEND_VAULT_ADDRESS
+        sync: false
+      - key: CONSENT_REGISTRY_ADDRESS
+        sync: false
+      - key: RECORD_ANCHOR_ADDRESS
+        sync: false
+      - key: ADMIN_ADDRESS
+        sync: false
+      - key: RELAY_SECRET
+        generateValue: true
