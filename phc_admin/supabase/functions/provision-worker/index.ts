@@ -1,4 +1,4 @@
-!!import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -143,6 +143,7 @@ serve(async (req) => {
 
     // 4. Create or update profile in Supabase profiles table
     const profilePayload: Record<string, any> = {
+      id: targetUserId,
       user_id: targetUserId,
       phc_id,
       role: "asha",

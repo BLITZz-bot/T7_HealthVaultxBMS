@@ -180,16 +180,24 @@ class CloudSyncService {
   static Future<bool> syncAll({String? workerAddress}) async {
     final db = await LocalDbService.database;
 
-    final users = await db.query('users', where: 'role = ?', whereArgs: ['asha'], limit: 1);
-    if (users.isEmpty) return false;
-    final asha = users.first;
-    final String? ashaCloudId = asha['cloud_id']?.toString();
-    final String? phcId = asha['phc_id']?.toString();
-
-    if (ashaCloudId == null || phcId == null || ashaCloudId.isEmpty || phcId.isEmpty) {
-      print("No cloud_id or phc_id found for ASHA. Cannot sync.");
-      return false;
+    Map<String, dynamic>? asha;
+    final usersWithCloud = await db.query(
+      'users',
+      where: "role = 'asha' AND cloud_id IS NOT NULL AND cloud_id != ''",
+      limit: 1,
+    );
+    if (usersWithCloud.isNotEmpty) {
+      asha = usersWithCloud.first;
+    } else {
+      final anyAsha = await db.query('users', where: "role = 'asha'", limit: 1);
+      if (anyAsha.isNotEmpty) {
+        asha = anyAsha.first;
+      }
     }
+    if (asha == null) return false;
+
+    String? ashaCloudId = asha['cloud_id']?.toString();
+    String? phcId = asha['phc_id']?.toString();
 
     final anonHeaders = {
       'apikey': _supabaseAnonKey,
@@ -197,25 +205,75 @@ class CloudSyncService {
       'Content-Type': 'application/json',
     };
 
+    // Auto-heal cloud_id and phc_id from Supabase profiles if missing
+    if (ashaCloudId == null || ashaCloudId.isEmpty || phcId == null || phcId.isEmpty) {
+      final phone = asha['phone_number']?.toString().trim() ?? '';
+      final username = asha['username']?.toString().trim() ?? '';
+      try {
+        final profileRes = await http.get(
+          Uri.parse('$_supabaseUrl/rest/v1/profiles?role=eq.asha&select=user_id,phc_id,phone,username'),
+          headers: anonHeaders,
+        ).timeout(const Duration(seconds: 5));
+        if (profileRes.statusCode == 200) {
+          final List pList = jsonDecode(profileRes.body);
+          final match = pList.firstWhere(
+            (p) => (phone.isNotEmpty && p['phone'] == phone) || (username.isNotEmpty && p['username'] == username),
+            orElse: () => pList.isNotEmpty ? pList.first : null,
+          );
+          if (match != null) {
+            ashaCloudId = match['user_id']?.toString();
+            phcId = match['phc_id']?.toString();
+            if (ashaCloudId != null) {
+              await db.update('users', {
+                'cloud_id': ashaCloudId,
+                'phc_id': phcId ?? '',
+              }, where: 'id = ?', whereArgs: [asha['id']]);
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (ashaCloudId == null || ashaCloudId.isEmpty) {
+      print("No cloud_id found for ASHA. Cannot sync.");
+      return false;
+    }
+
+    // ── Ensure all existing local records have a UUID before pushing ──
+    final unlinkedFamilies = await db.query('families', where: 'cloud_id IS NULL OR cloud_id = ""');
+    for (var f in unlinkedFamilies) {
+      await db.update('families', {'cloud_id': LocalDbService.generateUuidV4()}, where: 'id = ?', whereArgs: [f['id']]);
+    }
+    final unlinkedMembers = await db.query('members', where: 'cloud_id IS NULL OR cloud_id = ""');
+    for (var m in unlinkedMembers) {
+      await db.update('members', {'cloud_id': LocalDbService.generateUuidV4()}, where: 'id = ?', whereArgs: [m['id']]);
+    }
+    final unlinkedVitals = await db.query('medical_records', where: 'cloud_id IS NULL OR cloud_id = ""');
+    for (var v in unlinkedVitals) {
+      await db.update('medical_records', {'cloud_id': LocalDbService.generateUuidV4()}, where: 'id = ?', whereArgs: [v['id']]);
+    }
+
     // ── Collect unsynced data from local DB ──
 
-    // 1. Families → Households (resolve village UUIDs via anon key — best effort)
-    final unsyncedFamilies = await db.query('families', where: 'is_synced = 0 OR cloud_id IS NULL');
+    // 1. Families → Households
+    final unsyncedFamilies = await db.query('families', where: 'is_synced = 0');
     final pushHouseholds = <Map<String, dynamic>>[];
     for (var family in unsyncedFamilies) {
       final areaRes = await db.query('areas', where: 'id = ?', whereArgs: [family['area_id']]);
       final areaName = areaRes.isNotEmpty ? areaRes.first['village_or_ward'].toString() : 'Unknown';
       String? villageUuid;
-      try {
-        final vRes = await http.get(
-          Uri.parse('$_supabaseUrl/rest/v1/villages?name=eq.$areaName&phc_id=eq.$phcId&select=id'),
-          headers: anonHeaders,
-        );
-        if (vRes.statusCode == 200) {
-          final List vList = jsonDecode(vRes.body);
-          if (vList.isNotEmpty) villageUuid = vList.first['id'];
-        }
-      } catch (e) {}
+      if (phcId != null && phcId.isNotEmpty) {
+        try {
+          final vRes = await http.get(
+            Uri.parse('$_supabaseUrl/rest/v1/villages?name=eq.$areaName&phc_id=eq.$phcId&select=id'),
+            headers: anonHeaders,
+          );
+          if (vRes.statusCode == 200) {
+            final List vList = jsonDecode(vRes.body);
+            if (vList.isNotEmpty) villageUuid = vList.first['id'];
+          }
+        } catch (_) {}
+      }
 
       pushHouseholds.add({
         'cloud_id': family['cloud_id']?.toString(),
@@ -223,11 +281,12 @@ class CloudSyncService {
         'house_number': family['house_number'],
         'contact_number': family['contact_number'],
         'village_id': villageUuid,
+        'village_name': areaName,
       });
     }
 
     // 2. Members → need family cloud_id for household_id mapping
-    final unsyncedMembers = await db.query('members', where: 'is_synced = 0 OR cloud_id IS NULL');
+    final unsyncedMembers = await db.query('members', where: 'is_synced = 0');
     final pushMembers = <Map<String, dynamic>>[];
     for (var member in unsyncedMembers) {
       final fRes = await db.query('families', where: 'id = ?', whereArgs: [member['family_id']]);
@@ -262,7 +321,7 @@ class CloudSyncService {
     }
 
     // 3. Medical Records → need member cloud_id
-    final unsyncedVitals = await db.query('medical_records', where: 'is_synced = 0 OR cloud_id IS NULL');
+    final unsyncedVitals = await db.query('medical_records', where: 'is_synced = 0');
     final pushVitals = <Map<String, dynamic>>[];
     for (var vital in unsyncedVitals) {
       final mRes = await db.query('members', where: 'id = ?', whereArgs: [vital['member_id']]);
@@ -303,12 +362,34 @@ class CloudSyncService {
       ).timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
+        // Mark pushed families as synced
+        for (var h in pushHouseholds) {
+          final cid = h['cloud_id']?.toString();
+          if (cid != null) {
+            await db.update('families', {'is_synced': 1}, where: 'cloud_id = ?', whereArgs: [cid]);
+          }
+        }
+        // Mark pushed members as synced
+        for (var m in pushMembers) {
+          final cid = m['cloud_id']?.toString();
+          if (cid != null) {
+            await db.update('members', {'is_synced': 1}, where: 'cloud_id = ?', whereArgs: [cid]);
+          }
+        }
+        // Mark pushed vitals as synced
+        for (var v in pushVitals) {
+          final cid = v['cloud_id']?.toString();
+          if (cid != null) {
+            await db.update('medical_records', {'is_synced': 1}, where: 'cloud_id = ?', whereArgs: [cid]);
+          }
+        }
+
         final Map<String, dynamic> result = jsonDecode(response.body);
         final List cloudHouseholds = result['households'] ?? [];
         final List cloudMembers = result['members'] ?? [];
         final List cloudVitals = result['vitals'] ?? [];
 
-        // Update local families with cloud_id
+        // Update local families with cloud data
         for (var hh in cloudHouseholds) {
           final cloudHHId = hh['id']?.toString();
           if (cloudHHId == null) continue;
@@ -322,7 +403,7 @@ class CloudSyncService {
           );
         }
 
-        // Update local members with cloud_id
+        // Update local members with cloud data
         for (var m in cloudMembers) {
           final cloudMId = m['id']?.toString();
           if (cloudMId == null) continue;
@@ -335,7 +416,7 @@ class CloudSyncService {
           );
         }
 
-        // Update local medical_records with cloud_id
+        // Update local medical_records with cloud data
         for (var v in cloudVitals) {
           final cloudVId = v['id']?.toString();
           if (cloudVId == null) continue;
@@ -370,20 +451,61 @@ class CloudSyncService {
   static Future<bool> syncFromCloud() async {
     final db = await LocalDbService.database;
 
-    final users = await db.query('users', where: 'role = ?', whereArgs: ['asha'], limit: 1);
-    if (users.isEmpty) return false;
-    final asha = users.first;
-    final String? ashaCloudId = asha['cloud_id']?.toString();
-    if (ashaCloudId == null || ashaCloudId.isEmpty) {
-      print("No cloud_id found for ASHA. Cannot pull from cloud.");
-      return false;
+    Map<String, dynamic>? asha;
+    final usersWithCloud = await db.query(
+      'users',
+      where: "role = 'asha' AND cloud_id IS NOT NULL AND cloud_id != ''",
+      limit: 1,
+    );
+    if (usersWithCloud.isNotEmpty) {
+      asha = usersWithCloud.first;
+    } else {
+      final anyAsha = await db.query('users', where: "role = 'asha'", limit: 1);
+      if (anyAsha.isNotEmpty) {
+        asha = anyAsha.first;
+      }
     }
+    if (asha == null) return false;
 
+    String? ashaCloudId = asha['cloud_id']?.toString();
     final headers = {
       'apikey': _supabaseAnonKey,
       'Authorization': 'Bearer $_supabaseAnonKey',
       'Content-Type': 'application/json',
     };
+
+    if (ashaCloudId == null || ashaCloudId.isEmpty) {
+      final phone = asha['phone_number']?.toString().trim() ?? '';
+      final username = asha['username']?.toString().trim() ?? '';
+      try {
+        final profileRes = await http.get(
+          Uri.parse('$_supabaseUrl/rest/v1/profiles?role=eq.asha&select=user_id,phc_id,phone,username'),
+          headers: headers,
+        ).timeout(const Duration(seconds: 5));
+        if (profileRes.statusCode == 200) {
+          final List pList = jsonDecode(profileRes.body);
+          final match = pList.firstWhere(
+            (p) => (phone.isNotEmpty && p['phone'] == phone) || (username.isNotEmpty && p['username'] == username),
+            orElse: () => pList.isNotEmpty ? pList.first : null,
+          );
+          if (match != null) {
+            ashaCloudId = match['user_id']?.toString();
+            final phcId = match['phc_id']?.toString();
+            if (ashaCloudId != null) {
+              await db.update('users', {
+                'cloud_id': ashaCloudId,
+                'phc_id': phcId ?? '',
+              }, where: 'id = ?', whereArgs: [asha['id']]);
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (ashaCloudId == null || ashaCloudId.isEmpty) {
+      print("No cloud_id found for ASHA. Cannot pull from cloud.");
+      return false;
+    }
 
     try {
       final response = await http.post(

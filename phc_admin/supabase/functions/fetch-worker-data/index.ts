@@ -14,7 +14,7 @@ serve(async (req) => {
 
   try {
     const payload = await req.json();
-    const { cloud_id, phc_id, households: pushHouseholds, members: pushMembers, vitals: pushVitals } = payload;
+    const { cloud_id, households: pushHouseholds, members: pushMembers, vitals: pushVitals } = payload;
 
     if (!cloud_id) {
       return new Response(
@@ -36,20 +36,53 @@ serve(async (req) => {
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Resolve phc_id: either from payload or from the worker's profile
+    let phcId = payload.phc_id;
+    if (!phcId) {
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("phc_id")
+        .eq("user_id", cloud_id)
+        .maybeSingle();
+      if (prof?.phc_id) {
+        phcId = prof.phc_id;
+      }
+    }
+
     let syncedCount = 0;
 
     // ── PUSH: Insert/update households, members, vitals from device ──
     if (pushHouseholds && Array.isArray(pushHouseholds) && pushHouseholds.length > 0) {
-      const cleanedHouseholds = pushHouseholds.map((h: any) => ({
-        id: h.cloud_id,
-        phc_id,
-        asha_id: cloud_id,
-        village_id: h.village_id || null,
-        head_name: h.family_head_name || '',
-        house_number: h.house_number || null,
-        contact_number: h.contact_number || null,
-        deleted_at: h.deleted_at || null,
-      }));
+      const cleanedHouseholds = [];
+      for (const h of pushHouseholds) {
+        let vId = h.village_id || null;
+        let vName = h.village_name || null;
+        if (!vId && vName && phcId) {
+          const { data: vRecord } = await supabase
+            .from("villages")
+            .select("id,name,village_or_ward")
+            .eq("phc_id", phcId)
+            .or(`name.eq."${vName}",village_or_ward.eq."${vName}"`)
+            .maybeSingle();
+          if (vRecord?.id) {
+            vId = vRecord.id;
+            vName = vRecord.name || vRecord.village_or_ward || vName;
+          }
+        }
+
+        cleanedHouseholds.push({
+          id: h.cloud_id || crypto.randomUUID(),
+          phc_id: phcId,
+          asha_id: cloud_id,
+          village_id: vId,
+          village_name: vName || 'General',
+          head_name: h.family_head_name || '',
+          house_number: h.house_number || null,
+          contact_number: h.contact_number || null,
+          deleted_at: h.deleted_at || null,
+        });
+      }
 
       const { error: hhError } = await supabase
         .from("households")
@@ -64,17 +97,18 @@ serve(async (req) => {
 
     if (pushMembers && Array.isArray(pushMembers) && pushMembers.length > 0) {
       const cleanedMembers = pushMembers.map((m: any) => ({
-        id: m.cloud_id,
+        id: m.cloud_id || crypto.randomUUID(),
         household_id: m.household_cloud_id || null,
-        phc_id,
+        phc_id: phcId,
         asha_id: cloud_id,
         full_name: m.full_name || '',
-        age: m.age || null,
+        age: m.age != null ? Number(m.age) : null,
         gender: m.gender || null,
         relation_to_head: m.relationship_to_head || null,
         abha_id: m.abha_id || null,
         mobile_number: m.mobile_number || null,
         is_pregnant: m.is_pregnant === 1 || m.is_pregnant === true,
+        pregnancy_risk: (m.is_high_risk_pregnancy === 1 || m.is_high_risk_pregnancy === true) ? 'high' : 'normal',
         lmp_date: m.lmp_date || null,
         edd_date: m.edd_date || null,
         is_high_risk_pregnancy: m.is_high_risk_pregnancy === 1 || m.is_high_risk_pregnancy === true,
@@ -105,15 +139,21 @@ serve(async (req) => {
 
     if (pushVitals && Array.isArray(pushVitals) && pushVitals.length > 0) {
       const cleanedVitals = pushVitals.map((v: any) => ({
-        id: v.cloud_id,
+        id: v.cloud_id || crypto.randomUUID(),
         member_id: v.member_cloud_id || null,
-        phc_id,
+        phc_id: phcId,
+        recorded_by: cloud_id,
         asha_id: cloud_id,
+        systolic_bp: v.blood_pressure_systolic || null,
         bp_systolic: v.blood_pressure_systolic || null,
+        diastolic_bp: v.blood_pressure_diastolic || null,
         bp_diastolic: v.blood_pressure_diastolic || null,
+        temperature: v.temperature || null,
         temperature_c: v.temperature || null,
+        pulse: v.pulse_rate || null,
         pulse_rate: v.pulse_rate || null,
         spo2: v.spo2 || null,
+        resp_rate: v.respiratory_rate || null,
         respiratory_rate: v.respiratory_rate || null,
         blood_sugar_fasting: v.blood_sugar_fasting || null,
         blood_sugar_postprandial: v.blood_sugar_postprandial || null,
@@ -135,10 +175,10 @@ serve(async (req) => {
       }
     }
 
-    // ── PULL: Fetch latest data for this worker ──
+    // ── PULL: Fetch latest data for this worker or worker's PHC ──
     const { data: households, error: hhErr } = await supabase
       .from("households")
-      .select("*,village:villages(name)")
+      .select("*,village:villages(id,name,village_or_ward,block)")
       .eq("asha_id", cloud_id)
       .is("deleted_at", null);
 
@@ -153,7 +193,7 @@ serve(async (req) => {
       .select("*")
       .eq("asha_id", cloud_id);
 
-    // ── Update last_sync_at ──
+    // ── Update last_sync_at on profiles ──
     await supabase
       .from("profiles")
       .update({ last_sync_at: new Date().toISOString() })

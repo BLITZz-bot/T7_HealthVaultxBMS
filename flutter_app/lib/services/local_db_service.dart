@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:sqflite/sqflite.dart';
@@ -9,6 +10,15 @@ import 'blockchain_service.dart';
 
 class LocalDbService {
   static Database? _db;
+  static final Random _secureRandom = Random.secure();
+
+  static String generateUuidV4() {
+    final values = List<int>.generate(16, (i) => _secureRandom.nextInt(256));
+    values[6] = (values[6] & 0x0f) | 0x40; // RFC 4122 v4
+    values[8] = (values[8] & 0x3f) | 0x80; // IETF variant
+    final hex = values.map((b) => b.toRadixString(16).padLeft(2, '0')).toList();
+    return '${hex.sublist(0, 4).join()}-${hex.sublist(4, 6).join()}-${hex.sublist(6, 8).join()}-${hex.sublist(8, 10).join()}-${hex.sublist(10, 16).join()}';
+  }
 
   static Future<Database> get database async {
     if (_db != null) return _db!;
@@ -357,6 +367,8 @@ class LocalDbService {
                 } else {
                   distId = distRes.first['id'] as int;
                 }
+                final resolvedCloudId = cloudProfile['user_id']?.toString() ?? cloudProfile['id']?.toString() ?? '';
+                final resolvedPhcId = cloudProfile['phc_id']?.toString() ?? '';
                 int newUserId = await db.insert('users', {
                   'username': username.isNotEmpty ? username : trimmedName.toLowerCase().replaceAll(' ', '_'),
                   'first_name': fName,
@@ -365,6 +377,8 @@ class LocalDbService {
                   'phone_number': trimmedPhone,
                   'state': stateId.toString(),
                   'district': distId.toString(),
+                  'cloud_id': resolvedCloudId,
+                  'phc_id': resolvedPhcId,
                 });
 
                 final profileVillages = cloudProfile['profile_villages'] as List<dynamic>? ?? [];
@@ -681,6 +695,8 @@ class LocalDbService {
       'house_number': houseNo,
       'contact_number': contactNo,
       'area_id': int.parse(areaId),
+      'cloud_id': generateUuidV4(),
+      'is_synced': 0,
     });
     return true;
   }
@@ -767,6 +783,8 @@ class LocalDbService {
       'muac_cm': muacCm,
       'has_chronic_condition': hasChronicCondition ? 1 : 0,
       'chronic_notes': chronicNotes,
+      'cloud_id': generateUuidV4(),
+      'is_synced': 0,
     });
     return true;
   }
@@ -940,6 +958,8 @@ class LocalDbService {
       'entry_source': entrySource,
       'device_id': deviceId,
       'recorded_at': recordedAt,
+      'cloud_id': generateUuidV4(),
+      'is_synced': 0,
     });
 
     final memberInfo = await db.query('members', columns: ['age'], where: 'id = ?', whereArgs: [int.parse(memberId)]);
