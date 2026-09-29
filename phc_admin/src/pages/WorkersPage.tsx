@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { repository } from '@/backend';
 import { useSession } from '@/auth/AuthContext';
 import { useLiveQuery } from '@/hooks/useLiveQuery';
 import { Badge, Button, Card, EmptyState, InlineError, PageHeader, QueryView } from '@/components/ui';
 import { formatDateTime, formatRelative, hoursSince } from '@/lib/format';
 import { UserPlus, X } from 'lucide-react';
+import { Wallet } from 'ethers';
 
 export function WorkersPage() {
   const session = useSession();
@@ -20,8 +21,6 @@ export function WorkersPage() {
 
   const [q, setQ] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isBackendReady, setIsBackendReady] = useState(false);
-  const [backendStatus, setBackendStatus] = useState('Waking up Blockchain Server...');
   
   // Registration Form State
   const [username, setUsername] = useState('');
@@ -36,37 +35,6 @@ export function WorkersPage() {
   const [formError, setFormError] = useState<string | null>(null);
 
   const needle = q.trim().toLowerCase();
-
-  // Wake up blockchain server immediately when page loads
-  useEffect(() => {
-    let isSubscribed = true;
-    
-    const checkHealth = async () => {
-      try {
-        const res = await fetch('https://t7-mst-health-vault.onrender.com/health');
-        if (res.ok) {
-          if (isSubscribed) {
-             setIsBackendReady(true);
-             setBackendStatus('Blockchain Connected');
-          }
-          return true;
-        }
-      } catch (e) {
-        // ignore error, will retry
-      }
-      return false;
-    };
-
-    const poll = async () => {
-      const ok = await checkHealth();
-      if (!ok && isSubscribed) {
-        setTimeout(poll, 3000); // Poll every 3 seconds
-      }
-    };
-    poll();
-    
-    return () => { isSubscribed = false; };
-  }, []);
 
   const handleStateChange = (stateId: string) => {
     setSelectedStateId(stateId);
@@ -88,27 +56,34 @@ export function WorkersPage() {
     }
 
     if (villages.length === 0) {
-      setFormError('Please assign at least one Jurisdiction Area (Village/Ward) to the worker. (Type it and press Enter)');
+      setFormError('Please assign at least one Jurisdiction Area (Village/Ward) to the worker.');
       return;
     }
 
     setIsSaving(true);
     try {
-      // 1. Generate unique blockchain wallet for the worker
-      let walletAddress, walletPrivateKey;
+      // 1. Generate genuine Ethereum wallet for the worker using ethers
+      const workerWallet = Wallet.createRandom();
+      const walletAddress = workerWallet.address;
+      const walletPrivateKey = workerWallet.privateKey;
+
+      // 2. Best-effort notify relay if available (does not block registration)
       try {
-        const walletRes = await fetch('https://t7-mst-health-vault.onrender.com/worker/generate', { method: 'POST' });
-        if (!walletRes.ok) throw new Error('Failed to generate blockchain wallet');
-        const walletData = await walletRes.json();
-        walletAddress = walletData.wallet_address;
-        walletPrivateKey = walletData.private_key;
-      } catch (err: any) {
-        setFormError('Blockchain Wallet Error: ' + err.message);
-        setIsSaving(false);
-        return;
+        fetch('https://t7-mst-health-vault.onrender.com/register-worker', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            worker_name: `${firstName.trim()} ${lastName.trim()}`.trim(),
+            phone: phone.trim(),
+            aadhaar_last4: aadhaar.trim().slice(-4) || '0000',
+            admin_address: '0xB7a280Cd618dB5a0E82D84306DB423728034A089',
+          }),
+        }).catch(() => {});
+      } catch {
+        // Relay offline or sleeping; ignore
       }
 
-      // 2. Save worker to Supabase with the generated wallet
+      // 3. Save worker to Supabase with the generated wallet
       const stateObj = dbStates.find(s => s.id === selectedStateId);
       const districtObj = dbDistricts.find(d => d.id === selectedDistrictId);
 
@@ -408,24 +383,15 @@ export function WorkersPage() {
               </div>
 
               <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100">
-                <div className="text-xs">
-                  {!isBackendReady ? (
-                    <span className="flex items-center gap-2 text-amber-600">
-                      <span className="relative flex size-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full size-2 bg-amber-500"></span>
-                      </span>
-                      {backendStatus}
-                    </span>
-                  ) : (
-                    <span className="text-emerald-600 font-medium flex items-center gap-1">✓ {backendStatus}</span>
-                  )}
+                <div className="text-xs text-slate-500 flex items-center gap-1.5">
+                  <span className="inline-block size-2 rounded-full bg-emerald-500"></span>
+                  <span className="font-medium text-slate-600">EVM Blockchain Wallet Auto-Provisioned</span>
                 </div>
                 <div className="flex gap-2">
                   <Button variant="secondary" type="button" onClick={() => setIsModalOpen(false)}>
                     Cancel
                   </Button>
-                  <Button variant="primary" type="submit" loading={isSaving} disabled={!isBackendReady || !selectedStateId || !selectedDistrictId}>
+                  <Button variant="primary" type="submit" loading={isSaving} disabled={!selectedStateId || !selectedDistrictId}>
                     Save Worker
                   </Button>
                 </div>
