@@ -32,7 +32,18 @@ update public.villages set village_or_ward = name where village_or_ward is null;
 alter table public.states enable row level security;
 alter table public.districts enable row level security;
 
--- 5. Create RLS Policies
+-- 5. Helper Function (in case it's missing)
+create or replace function public.is_phc_staff() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.profiles 
+    where user_id = auth.uid() 
+    and role in ('phc_admin', 'medical_officer') 
+    and is_active = true
+  )
+$$;
+
+-- 6. Create RLS Policies
 -- Everyone authenticated can read states and districts
 create policy "allow_read_states" on public.states for select to authenticated using (true);
 create policy "allow_read_districts" on public.districts for select to authenticated using (true);

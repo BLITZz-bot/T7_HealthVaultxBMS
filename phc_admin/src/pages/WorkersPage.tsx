@@ -10,6 +10,15 @@ import { UserPlus, X } from 'lucide-react';
 export function WorkersPage() {
   const session = useSession();
   const workers = useLiveQuery((phc) => repository.listWorkers(phc), ['profiles', 'households']);
+  
+  const statesQuery = useLiveQuery(() => repository.getStates(), ['states']);
+  const districtsQuery = useLiveQuery(() => repository.getDistricts(), ['districts']);
+  const areasQuery = useLiveQuery((phc) => repository.getAreas(phc), ['villages']);
+
+  const dbStates = statesQuery.data || [];
+  const dbDistricts = districtsQuery.data || [];
+  const dbAreas = areasQuery.data || [];
+
   const [q, setQ] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   
@@ -19,8 +28,8 @@ export function WorkersPage() {
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
   const [aadhaar, setAadhaar] = useState('');
-  const [selectedState, setSelectedState] = useState('Karnataka');
-  const [selectedDistrict, setSelectedDistrict] = useState(INDIA_STATES_DISTRICTS['Karnataka']?.[0] ?? '');
+  const [selectedStateId, setSelectedStateId] = useState('');
+  const [selectedDistrictId, setSelectedDistrictId] = useState('');
   const [villages, setVillages] = useState<string[]>([]);
   const [villageInput, setVillageInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -28,10 +37,9 @@ export function WorkersPage() {
 
   const needle = q.trim().toLowerCase();
 
-  const handleStateChange = (stateName: string) => {
-    setSelectedState(stateName);
-    const districts = INDIA_STATES_DISTRICTS[stateName] ?? [];
-    setSelectedDistrict(districts[0] ?? '');
+  const handleStateChange = (stateId: string) => {
+    setSelectedStateId(stateId);
+    setSelectedDistrictId('');
   };
 
   const handleRegisterWorker = async (e: React.FormEvent) => {
@@ -70,15 +78,18 @@ export function WorkersPage() {
       }
 
       // 2. Save worker to Supabase with the generated wallet
+      const stateObj = dbStates.find(s => s.id === selectedStateId);
+      const districtObj = dbDistricts.find(d => d.id === selectedDistrictId);
+
       await repository.createWorker(session.phcId, {
         username: username.trim(),
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         phone: phone.trim(),
         aadhaar: aadhaar.trim() || undefined,
-        state: selectedState,
-        district: selectedDistrict,
-        villageOrWard: villages.length > 0 ? villages.join(', ') : `${selectedDistrict} Area`,
+        state: stateObj ? stateObj.name : 'Unknown',
+        district: districtObj ? districtObj.name : 'Unknown',
+        villageOrWard: villages.length > 0 ? villages.join(', ') : `${districtObj ? districtObj.name : 'General'} Area`,
         walletAddress,
         walletPrivateKey,
       });
@@ -301,18 +312,19 @@ export function WorkersPage() {
                 />
               </div>
 
-              {/* ── State & District Cascading Selectors (Matches App IndiaData) ── */}
+              {/* ── State & District Cascading Selectors ── */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="mb-1 block text-xs font-medium text-slate-700">State *</label>
                   <select
-                    value={selectedState}
+                    value={selectedStateId}
                     onChange={(e) => handleStateChange(e.target.value)}
                     className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-brand-600"
                   >
-                    {Object.keys(INDIA_STATES_DISTRICTS).map((st) => (
-                      <option key={st} value={st}>
-                        {st}
+                    <option value="">Choose State...</option>
+                    {dbStates.sort((a,b)=>a.name.localeCompare(b.name)).map((st) => (
+                      <option key={st.id} value={st.id}>
+                        {st.name}
                       </option>
                     ))}
                   </select>
@@ -320,13 +332,15 @@ export function WorkersPage() {
                 <div>
                   <label className="mb-1 block text-xs font-medium text-slate-700">District *</label>
                   <select
-                    value={selectedDistrict}
-                    onChange={(e) => setSelectedDistrict(e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-brand-600"
+                    value={selectedDistrictId}
+                    onChange={(e) => setSelectedDistrictId(e.target.value)}
+                    disabled={!selectedStateId}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-brand-600 disabled:bg-slate-100 disabled:text-slate-400"
                   >
-                    {(INDIA_STATES_DISTRICTS[selectedState] ?? []).map((dst) => (
-                      <option key={dst} value={dst}>
-                        {dst}
+                    <option value="">Choose District...</option>
+                    {dbDistricts.filter(d => d.state_id === selectedStateId).sort((a,b)=>a.name.localeCompare(b.name)).map((dst) => (
+                      <option key={dst.id} value={dst.id}>
+                        {dst.name}
                       </option>
                     ))}
                   </select>
@@ -334,7 +348,7 @@ export function WorkersPage() {
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-700">Jurisdiction Areas (Press Enter to add)</label>
+                <label className="mb-1 block text-xs font-medium text-slate-700">Jurisdiction Areas (Select from list or type to add)</label>
                 <div className="flex flex-wrap gap-2 mb-2">
                   {villages.map((v, i) => (
                     <span key={i} className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-700 border border-brand-200">
@@ -345,22 +359,41 @@ export function WorkersPage() {
                     </span>
                   ))}
                 </div>
-                <input
-                  type="text"
-                  value={villageInput}
-                  onChange={(e) => setVillageInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      if (villageInput.trim() && !villages.includes(villageInput.trim())) {
-                        setVillages([...villages, villageInput.trim()]);
-                        setVillageInput('');
+                
+                <div className="flex gap-2">
+                  <select 
+                    disabled={!selectedDistrictId}
+                    onChange={(e) => {
+                      if (e.target.value && !villages.includes(e.target.value)) {
+                        setVillages([...villages, e.target.value]);
                       }
-                    }
-                  }}
-                  placeholder="e.g. Ward 4 (Press Enter)"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-600"
-                />
+                      e.target.value = '';
+                    }}
+                    className="w-1/2 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-600 disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    <option value="">-- Select Pre-added Area --</option>
+                    {dbAreas.filter(a => a.district_id === selectedDistrictId).sort((a,b)=>a.village_or_ward.localeCompare(b.village_or_ward)).map(area => (
+                      <option key={area.id} value={area.village_or_ward}>{area.village_or_ward} ({area.block})</option>
+                    ))}
+                  </select>
+
+                  <input
+                    type="text"
+                    value={villageInput}
+                    onChange={(e) => setVillageInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (villageInput.trim() && !villages.includes(villageInput.trim())) {
+                          setVillages([...villages, villageInput.trim()]);
+                          setVillageInput('');
+                        }
+                      }
+                    }}
+                    placeholder="or type custom area (Press Enter)"
+                    className="w-1/2 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-600"
+                  />
+                </div>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
