@@ -8,6 +8,7 @@ import type {
   DashboardStats,
   District,
   Household,
+  LiveTable,
   Referral,
   State,
   VisitTask,
@@ -403,14 +404,26 @@ export const supabaseRepository: PhcRepository = {
   subscribe(phcId, table, onChange) {
     const sb = getSupabase();
     const uniqueId = Math.random().toString(36).slice(2, 9);
+
+    // States and districts are global reference data — they don't have a phc_id
+    // column, so the Realtime subscription cannot filter on it. Listening
+    // unfiltered ensures JurisdictionsPage auto-refreshes when either table changes.
+    const GLOBAL_TABLES = new Set<LiveTable>(['states', 'districts']);
+
     const channel = sb
       .channel(`phc-${phcId}-${table}-${uniqueId}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table, filter: `phc_id=eq.${phcId}` },
+        {
+          event: '*',
+          schema: 'public',
+          table,
+          ...(GLOBAL_TABLES.has(table) ? {} : { filter: `phc_id=eq.${phcId}` }),
+        },
         () => onChange(),
       )
       .subscribe();
+
     return () => {
       void sb.removeChannel(channel);
     };

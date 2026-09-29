@@ -61,6 +61,7 @@ export function JurisdictionsPage() {
       setIsSaving(false);
       statesQuery.reload();
       districtsQuery.reload();
+      areasQuery.reload();
     }
   };
 
@@ -72,6 +73,7 @@ export function JurisdictionsPage() {
       await repository.addState(newStateName.trim());
       setNewStateName('');
       setIsAddStateOpen(false);
+      statesQuery.reload();
     } catch (e: any) { alert(e.message); }
     finally { setIsSaving(false); }
   };
@@ -86,6 +88,7 @@ export function JurisdictionsPage() {
       setNewDistrictStateId('');
       setExpandedStates(new Set(expandedStates).add(newDistrictStateId));
       setIsAddDistrictOpen(false);
+      districtsQuery.reload();
     } catch (e: any) { alert(e.message); }
     finally { setIsSaving(false); }
   };
@@ -102,6 +105,7 @@ export function JurisdictionsPage() {
       setNewAreaStateId('');
       setExpandedDistricts(new Set(expandedDistricts).add(newAreaDistrictId));
       setIsAddAreaOpen(false);
+      areasQuery.reload();
     } catch (e: any) { alert(e.message); }
     finally { setIsSaving(false); }
   };
