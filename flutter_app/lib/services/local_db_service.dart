@@ -92,7 +92,9 @@ class LocalDbService {
             family_head_name TEXT,
             house_number TEXT,
             contact_number TEXT,
-            area_id INTEGER
+            area_id INTEGER,
+            cloud_id TEXT,
+            is_synced INTEGER DEFAULT 0
           )
         ''');
 
