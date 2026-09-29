@@ -92,7 +92,7 @@ async function main() {
     network:      network.name,
     chainId:      Number(network.chainId),
     rpc:          "https://testnetrpc.mstblockchain.com",
-    explorer:     "https://mstscan.com",
+    explorer:     "https://testnet.mstscan.com",
     deployedAt:   new Date().toISOString(),
     deployer:     deployer.address,
     contracts: {
@@ -115,8 +115,29 @@ async function main() {
     console.log(`✅ Relay copy saved : backend/contracts.json`);
   }
 
+  // Auto-update backend/.env with the new contract addresses so they stay in sync.
+  const backendEnvPath = path.join(__dirname, "..", "..", "backend", ".env");
+  if (fs.existsSync(backendEnvPath)) {
+    let envContent = fs.readFileSync(backendEnvPath, "utf8");
+    const addrMap = {
+      WORKER_REGISTRY_ADDRESS:  wrAddress,
+      CARECOIN_ADDRESS:         ccAddress,
+      STIPEND_VAULT_ADDRESS:    svAddress,
+      CONSENT_REGISTRY_ADDRESS: crAddress,
+      RECORD_ANCHOR_ADDRESS:    raAddress,
+    };
+    for (const [key, val] of Object.entries(addrMap)) {
+      envContent = envContent.replace(
+        new RegExp(`^(${key}=).*$`, "m"),
+        `$1${val}`
+      );
+    }
+    fs.writeFileSync(backendEnvPath, envContent, "utf8");
+    console.log(`✅ backend/.env updated with new contract addresses`);
+  }
+
   console.log("\n═══════════════════════════════════════════════════════");
-  console.log("  DEPLOYMENT COMPLETE — Verify on https://mstscan.com");
+  console.log("  DEPLOYMENT COMPLETE — Verify on https://testnet.mstscan.com");
   console.log("═══════════════════════════════════════════════════════\n");
   console.log("  WorkerRegistry   :", wrAddress);
   console.log("  CareCoin         :", ccAddress);

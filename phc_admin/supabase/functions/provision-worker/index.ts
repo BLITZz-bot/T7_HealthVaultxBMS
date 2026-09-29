@@ -142,8 +142,8 @@ serve(async (req) => {
     }
 
     // 4. Create or update profile in Supabase profiles table
+    // Note: profiles PK is `user_id` — there is no `id` column.
     const profilePayload: Record<string, any> = {
-      id: targetUserId,
       user_id: targetUserId,
       phc_id,
       role: "asha",
@@ -183,7 +183,7 @@ serve(async (req) => {
             village_names.map((name: string) => ({
               phc_id,
               name: name.trim(),
-              village_or_ward: name.trim(),
+              // Note: no village_or_ward column — `name` is the canonical column.
             })),
             { onConflict: "phc_id,name", ignoreDuplicates: true }
           )

@@ -314,16 +314,19 @@ async def submit_visit(req: VisitRequest):
             task_type=req.task_type,
             worker_account=worker_account,
         )
-        # INSTANT REWARD PAYOUT: The Relay automatically attests the visit
-        # This triggers the Smart Contract to instantly transfer CareCoins
-        # to the ASHA worker's wallet, eliminating manual admin approval!
-        chain.batch_attest([vk_hex])
+        # ── Note ──────────────────────────────────────────────────────────────
+        # The visit is now PENDING hospital attestation in StipendVault.
+        # The PHC Admin must call POST /batch-attest (with X-Admin-Secret)
+        # from the web portal to approve and release CareCoin rewards.
+        # Auto-attestation was removed to preserve the anti-fraud review gate.
+        # ──────────────────────────────────────────────────────────────────────
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Visit submit failed: {str(e)}")
 
     return {
         "tx_hash":   tx_hash,
         "visit_key": vk_hex,
+        "status":    "pending_attestation",
         "explorer":  f"https://testnet.mstscan.com/tx/{tx_hash}",
     }
 

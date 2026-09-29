@@ -12,7 +12,8 @@ Rules (must match Dart BlockchainService and JS web app exactly):
 
 Cross-language test vector:
   Input : {"hr":84,"sbp":120,"dbp":80,"map":93.33,"temp":37.0,"spo2":98,"resp":16,"age":32,"recorded_at":"2026-09-28T12:00:00Z"}
-  Output: 0x6147f5d305c2aa8964b010f936b20bd5b93dfdb0409cf7ebbe524ece5791de7d
+  Canonical: {"hr":84,"sbp":120,"dbp":80,"map":93.33,"temp":37,"spo2":98,"resp":16,"age":32,"recorded_at":"2026-09-28T12:00:00Z"}
+  Output: 0x0713a9e100fc83fef75f58ca0176fbe06b44272f98ced343ca333a9e2dd0cf38
 """
 
 import json

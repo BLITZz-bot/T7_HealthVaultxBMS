@@ -53,8 +53,10 @@ select p.user_id as id,
        ) as village_names
 from public.profiles p
 left join public.households h on h.asha_id = p.user_id
-left join public.villages v on v.id::text = to_jsonb(h)->>'village_id'
+left join public.villages v on v.id = h.village_id          -- fixed: direct FK, not a JSON cast
 left join public.profile_villages pv on pv.user_id = p.user_id
 left join public.villages pv_v on pv_v.id = pv.village_id
 where p.role::text = 'asha'
-group by p.user_id;
+group by p.user_id, p.phc_id, p.full_name, p.phone, p.is_active,
+         p.last_sync_at, p.wallet_address;
+

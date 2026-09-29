@@ -13,6 +13,37 @@ class CloudSyncService {
     defaultValue: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhqbGxzeWR0dWZrYXRmcWN6c3N4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA2MTE5NTcsImV4cCI6MjEwNjE4Nzk1N30.MLXtdVN_1KRH5Q60pJxoCGO9jdIdTvXrprAUKomXHaQ',
   );
 
+  // ── Session JWT ───────────────────────────────────────────────────────────
+  // Set this after a successful Supabase Auth login so RLS auth.uid() works.
+  // Without a real JWT, auth.uid() is NULL and all ASHA-scoped rows are hidden.
+  static String? _supabaseJwt;
+
+  /// Call this once after the ASHA worker signs in via Supabase Auth.
+  static void setSessionToken(String jwt) {
+    _supabaseJwt = jwt;
+  }
+
+  static void clearSessionToken() {
+    _supabaseJwt = null;
+  }
+
+  /// Returns headers with the best available auth token.
+  /// Authenticated (JWT) for writes and RLS-sensitive reads.
+  /// Falls back to anon key for pre-login public reads (jurisdictions).
+  static Map<String, String> _getAuthHeaders({bool requireAuth = false}) {
+    final token = _supabaseJwt ?? _supabaseAnonKey;
+    if (requireAuth && _supabaseJwt == null) {
+      // Log but don't throw — offline mode must still partially work.
+      print('[CloudSync] WARNING: Using anon key as Authorization. '
+            'RLS auth.uid() checks will fail. Call setSessionToken() after login.');
+    }
+    return {
+      'apikey': _supabaseAnonKey,          // always the anon key for API gateway
+      'Authorization': 'Bearer $token',     // JWT when available, anon key otherwise
+      'Content-Type': 'application/json',
+    };
+  }
+
   static Future<int> getPendingSyncCount() async {
     final db = await LocalDbService.database;
     int count = 0;
@@ -26,11 +57,8 @@ class CloudSyncService {
   }
 
   static Future<bool> syncMasterJurisdictions() async {
-    final headers = {
-      'apikey': _supabaseAnonKey,
-      'Authorization': 'Bearer $_supabaseAnonKey',
-      'Content-Type': 'application/json',
-    };
+    // Jurisdiction data is public reference data — anon key is fine here.
+    final headers = _getAuthHeaders();
 
     try {
       final db = await LocalDbService.database;
@@ -97,11 +125,7 @@ class CloudSyncService {
   static Future<bool> syncWorkersFromCloud() async {
     final db = await LocalDbService.database;
 
-    final headers = {
-      'apikey': _supabaseAnonKey,
-      'Authorization': 'Bearer $_supabaseAnonKey',
-      'Content-Type': 'application/json',
-    };
+    final headers = _getAuthHeaders(requireAuth: true);
 
     try {
       // Fetch ASHA workers from Supabase profiles with their PHC info
@@ -199,11 +223,7 @@ class CloudSyncService {
     String? ashaCloudId = asha['cloud_id']?.toString();
     String? phcId = asha['phc_id']?.toString();
 
-    final anonHeaders = {
-      'apikey': _supabaseAnonKey,
-      'Authorization': 'Bearer $_supabaseAnonKey',
-      'Content-Type': 'application/json',
-    };
+    final anonHeaders = _getAuthHeaders(requireAuth: true);
 
     // Auto-heal cloud_id and phc_id from Supabase profiles if missing
     if (ashaCloudId == null || ashaCloudId.isEmpty || phcId == null || phcId.isEmpty) {

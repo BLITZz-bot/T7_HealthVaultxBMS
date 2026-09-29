@@ -7,6 +7,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../data/india_data.dart';
 import 'blockchain_service.dart';
+import 'cloud_sync_service.dart';
 
 class LocalDbService {
   static Database? _db;
@@ -451,6 +452,37 @@ class LocalDbService {
               if (refreshed.isNotEmpty) {
                 final payload = await _buildUserPayload(refreshed.first);
                 payload['user']['wallet_address'] = tempWalletAddress;
+
+                // ── Obtain Supabase JWT so sync calls use auth.uid() correctly ──
+                // The synthetic email format matches what provision-worker creates.
+                final cloudUsername = (cloudProfile['username'] ?? '').toString().trim();
+                final syntheticEmail = '${cloudUsername.isNotEmpty ? cloudUsername : trimmedPhone.replaceAll(' ', '_')}@asha.healthvault.local';
+                final aadhaarLast4 = '2026'; // default fallback set by provision-worker
+                try {
+                  final signInRes = await http.post(
+                    Uri.parse('$_supabaseUrl/auth/v1/token?grant_type=password'),
+                    headers: {
+                      'apikey': _supabaseAnonKey,
+                      'Content-Type': 'application/json',
+                    },
+                    body: jsonEncode({
+                      'email': syntheticEmail,
+                      'password': 'Asha@${cloudProfile['aadhaar_last4'] ?? aadhaarLast4}!',
+                    }),
+                  ).timeout(const Duration(seconds: 5));
+                  if (signInRes.statusCode == 200) {
+                    final signInData = jsonDecode(signInRes.body);
+                    final jwt = signInData['access_token']?.toString();
+                    if (jwt != null && jwt.isNotEmpty) {
+                      CloudSyncService.setSessionToken(jwt);
+                      payload['supabase_jwt'] = jwt;
+                    }
+                  }
+                } catch (_) {
+                  // JWT login failed — sync will still work but RLS auth.uid() won't resolve.
+                  // This is non-fatal; offline mode and anon-key reads will still function.
+                }
+
                 return payload;
               }
             }
@@ -499,27 +531,35 @@ class LocalDbService {
           final userObj = authData['user'];
           final userId = userObj?['id'];
           final userEmail = userObj?['email'] ?? trimmedUser;
+          // Store JWT immediately so all subsequent calls use real auth
+          final adminJwt = authData['access_token']?.toString();
+          if (adminJwt != null && adminJwt.isNotEmpty) {
+            CloudSyncService.setSessionToken(adminJwt);
+          }
 
           // -------------------------------------------------------------
-          // AUTO-HEAL: If the user deleted and recreated their Supabase Auth 
-          // account, their auth.users ID changed, causing the profiles table 
-          // to point to a dead UUID. We fix it by aggressively re-linking 
-          // the phc_admin profile to whatever their NEW auth ID is!
+          // AUTO-HEAL: If the user deleted and recreated their Supabase Auth
+          // account, their auth.users ID changed, causing the profiles table
+          // to point to a dead UUID. We fix it by re-linking the phc_admin
+          // profile to whatever their NEW auth ID is.
+          // Uses the real JWT (not anon key) so RLS allows the update.
           // -------------------------------------------------------------
-          try {
-            final healUri = Uri.parse('$_supabaseUrl/rest/v1/profiles?role=eq.phc_admin');
-            await http.patch(
-              healUri,
-              headers: {
-                'apikey': _supabaseAnonKey,
-                'Authorization': 'Bearer $_supabaseAnonKey',
-                'Content-Type': 'application/json',
-              },
-              body: jsonEncode({'user_id': userId}),
-            );
-          } catch (_) {}
+          if (adminJwt != null) {
+            try {
+              final healUri = Uri.parse('$_supabaseUrl/rest/v1/profiles?role=eq.phc_admin');
+              await http.patch(
+                healUri,
+                headers: {
+                  'apikey': _supabaseAnonKey,
+                  'Authorization': 'Bearer $adminJwt',
+                  'Content-Type': 'application/json',
+                },
+                body: jsonEncode({'user_id': userId}),
+              );
+            } catch (_) {}
+          }
 
-          // Fetch profile details from Supabase profiles table
+          // Fetch profile details using the real JWT for authenticated RLS
           final profileUri = Uri.parse(
             '$_supabaseUrl/rest/v1/profiles?user_id=eq.$userId&select=*,phc:phcs(*)'
           );
@@ -527,7 +567,7 @@ class LocalDbService {
             profileUri,
             headers: {
               'apikey': _supabaseAnonKey,
-              'Authorization': 'Bearer $_supabaseAnonKey', // Use Anon Key to bypass potential authenticated RLS issues
+              'Authorization': 'Bearer ${adminJwt ?? _supabaseAnonKey}',
               'Content-Type': 'application/json',
             },
           ).timeout(const Duration(seconds: 4));
@@ -547,6 +587,7 @@ class LocalDbService {
 
                 return {
                   'token': _generateToken(1),
+                  'supabase_jwt': adminJwt,
                   'user': {
                     'id': 1,
                     'username': p['full_name'] ?? userEmail,

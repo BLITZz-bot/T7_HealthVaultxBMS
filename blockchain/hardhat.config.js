@@ -47,8 +47,8 @@ module.exports = {
         network: "mstTestnet",
         chainId: 91562037,
         urls: {
-          apiURL:    "https://mstscan.com/api",
-          browserURL:"https://mstscan.com",
+          apiURL:    "https://testnet.mstscan.com/api",
+          browserURL:"https://testnet.mstscan.com",
         },
       },
     ],

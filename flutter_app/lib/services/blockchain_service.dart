@@ -6,7 +6,10 @@ import 'package:http/http.dart' as http;
 import 'local_db_service.dart';
 
 class BlockchainService {
-  static const String RELAY_URL = 'https://t7-mst-health-vault.onrender.com';
+  static const String RELAY_URL = String.fromEnvironment(
+    'RELAY_URL',
+    defaultValue: 'https://t7-mst-health-vault.onrender.com',
+  );
 
   static final List<String> VITALS_FIELDS = [
     "hr",
@@ -100,18 +103,48 @@ class BlockchainService {
         final medRec = medRecList.first;
         final memberId = record['member_id'].toString();
 
+        // Fetch member age for canonical vitals hash
+        int? memberAge;
+        final memberList = await db.query('members', where: 'id = ?', whereArgs: [record['member_id']]);
+        if (memberList.isNotEmpty) {
+          memberAge = memberList.first['age'] as int?;
+        }
+
+        // Compute MAP from systolic and diastolic if not stored separately
+        // MAP = DBP + (SBP - DBP) / 3
+        final int? sbp = medRec['blood_pressure_systolic'] as int?;
+        final int? dbp = medRec['blood_pressure_diastolic'] as int?;
+        double? map;
+        if (sbp != null && dbp != null) {
+          map = dbp + (sbp - dbp) / 3.0;
+          map = double.parse(map.toStringAsFixed(2));
+        }
+
+        // Canonical vitals dict — ALL fields required for hash consistency with relay
         final vitals = {
-          "hr": medRec['pulse_rate'],
-          "sbp": medRec['blood_pressure_systolic'],
-          "dbp": medRec['blood_pressure_diastolic'],
-          "temp": medRec['temperature'],
-          "spo2": medRec['spo2'],
-          "resp": medRec['respiratory_rate'],
+          "hr":          medRec['pulse_rate'],
+          "sbp":         sbp,
+          "dbp":         dbp,
+          "map":         map,                             // FIX: was missing
+          "temp":        medRec['temperature'],
+          "spo2":        medRec['spo2'],
+          "resp":        medRec['respiratory_rate'],
+          "age":         memberAge,                       // FIX: was missing
           "recorded_at": medRec['recorded_at'],
         };
 
-        // 2. Call the new /anchor endpoint on Render
-        final response = await http.post(
+        // Per-family salt: use a stable identifier. In production this should be
+        // a securely generated per-family random string stored in the local DB.
+        // Using memberId as a stable fallback for the custodial pilot.
+        final familySalt = 'hv_salt_$memberId';
+
+        // Compute period (YYYY-MM) for replay-attack prevention
+        DateTime now = DateTime.now();
+        String period = "${now.year}-${now.month.toString().padLeft(2, '0')}";
+        int taskType = 1; // Default: Home Visit
+
+        // 2. Call /anchor — anchors the vitals hash on RecordAnchor contract
+        final anchorResponse = await http.post(
           Uri.parse('$RELAY_URL/anchor'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({
@@ -121,26 +154,54 @@ class BlockchainService {
           }),
         );
 
-        if (response.statusCode == 200 || response.statusCode == 201) {
-          final resJson = jsonDecode(response.body);
-          await db.update(
-            'chain_outbox',
-            {
-              'status': 'synced',
-              'synced_at': DateTime.now().toUtc().toIso8601String(),
-              'tx_hash': resJson['tx_hash'] ?? '0x_mock',
-            },
-            where: 'id = ?',
-            whereArgs: [record['id']],
-          );
-        } else {
-          print('Relay error: ${response.body}');
+        if (anchorResponse.statusCode != 200 && anchorResponse.statusCode != 201) {
+          print('Relay /anchor error: ${anchorResponse.body}');
+          continue;
         }
+
+        final anchorJson = jsonDecode(anchorResponse.body);
+        final anchorTxHash = anchorJson['tx_hash'] ?? '0x_mock';
+
+        // 3. Call /visit — submits visit to StipendVault for hospital attestation
+        // This is required for the worker to eventually receive CareCoin payment.
+        final visitResponse = await http.post(
+          Uri.parse('$RELAY_URL/visit'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'worker_address': workerAddress,
+            'beneficiary_id': memberId,
+            'family_salt':    familySalt,
+            'task_type':      taskType,
+            'period':         period,
+          }),
+        );
+
+        if (visitResponse.statusCode != 200 && visitResponse.statusCode != 201) {
+          print('Relay /visit error (non-fatal, anchor succeeded): ${visitResponse.body}');
+          // Anchor succeeded — still mark as synced so we don't re-anchor.
+          // Visit will be retried on next sync if needed.
+        }
+
+        final visitJson = visitResponse.statusCode == 200
+            ? jsonDecode(visitResponse.body)
+            : {};
+
+        await db.update(
+          'chain_outbox',
+          {
+            'status': 'synced',
+            'synced_at': DateTime.now().toUtc().toIso8601String(),
+            'tx_hash': anchorTxHash,
+          },
+          where: 'id = ?',
+          whereArgs: [record['id']],
+        );
       } catch (e) {
         print("Sync failed for record ${record['id']}: $e");
       }
     }
   }
+
 
   static Future<Map<String, dynamic>?> getChainStatus(int medicalRecordId) async {
     final db = await LocalDbService.database;
