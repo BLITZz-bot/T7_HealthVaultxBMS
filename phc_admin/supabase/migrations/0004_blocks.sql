@@ -7,9 +7,10 @@
 alter table public.villages
   add column if not exists block text;
 
--- Add a unique constraint on (phc_id, name) to support upsert in provisioning
+-- Add a unique constraint on (phc_id, name) to support upsert in provisioning.
+-- Must use bare `name` (not lower(name)) so Supabase upsert onConflict="phc_id,name" resolves correctly.
 create unique index if not exists villages_phc_name_unique
-  on public.villages (phc_id, lower(name));
+  on public.villages (phc_id, name);
 create unique index if not exists villages_phc_id_name_unique
   on public.villages (phc_id, name);
 
