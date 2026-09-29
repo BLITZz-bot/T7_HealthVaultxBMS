@@ -30,7 +30,6 @@ export function WorkersPage() {
   const [selectedStateId, setSelectedStateId] = useState('');
   const [selectedDistrictId, setSelectedDistrictId] = useState('');
   const [villages, setVillages] = useState<string[]>([]);
-  const [villageInput, setVillageInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -100,7 +99,6 @@ export function WorkersPage() {
       setPhone('');
       setAadhaar('');
       setVillages([]);
-      setVillageInput('');
       setIsModalOpen(false);
       workers.reload();
     } catch (err: any) {
@@ -347,7 +345,7 @@ export function WorkersPage() {
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-700">Jurisdiction Areas (Select from list or type to add)</label>
+                <label className="mb-1 block text-xs font-medium text-slate-700">Jurisdiction Areas (Select from list)</label>
                 <div className="flex flex-wrap gap-2 mb-2">
                   {villages.map((v, i) => (
                     <span key={i} className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-700 border border-brand-200">
@@ -359,40 +357,21 @@ export function WorkersPage() {
                   ))}
                 </div>
                 
-                <div className="flex gap-2">
-                  <select 
-                    disabled={!selectedDistrictId}
-                    onChange={(e) => {
-                      if (e.target.value && !villages.includes(e.target.value)) {
-                        setVillages([...villages, e.target.value]);
-                      }
-                      e.target.value = '';
-                    }}
-                    className="w-1/2 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-600 disabled:bg-slate-100 disabled:text-slate-400"
-                  >
-                    <option value="">-- Select Pre-added Area --</option>
-                    {dbAreas.filter(a => a.district_id === selectedDistrictId).sort((a,b)=>a.village_or_ward.localeCompare(b.village_or_ward)).map(area => (
-                      <option key={area.id} value={area.village_or_ward}>{area.village_or_ward} ({area.block})</option>
-                    ))}
-                  </select>
-
-                  <input
-                    type="text"
-                    value={villageInput}
-                    onChange={(e) => setVillageInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        if (villageInput.trim() && !villages.includes(villageInput.trim())) {
-                          setVillages([...villages, villageInput.trim()]);
-                          setVillageInput('');
-                        }
-                      }
-                    }}
-                    placeholder="or type custom area (Press Enter)"
-                    className="w-1/2 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-600"
-                  />
-                </div>
+                <select 
+                  disabled={!selectedDistrictId}
+                  onChange={(e) => {
+                    if (e.target.value && !villages.includes(e.target.value)) {
+                      setVillages([...villages, e.target.value]);
+                    }
+                    e.target.value = '';
+                  }}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-600 disabled:bg-slate-100 disabled:text-slate-400"
+                >
+                  <option value="">-- Select Pre-added Area --</option>
+                  {dbAreas.filter(a => a.district_id === selectedDistrictId).sort((a,b)=>a.village_or_ward.localeCompare(b.village_or_ward)).map(area => (
+                    <option key={area.id} value={area.village_or_ward}>{area.village_or_ward} ({area.block})</option>
+                  ))}
+                </select>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
