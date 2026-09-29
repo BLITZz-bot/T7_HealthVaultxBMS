@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Plus, Trash2, MapPin, Flag, Building2, Download, Search, ChevronDown, ChevronRight, Map, Loader2 } from 'lucide-react';
+import { Trash2, MapPin, Flag, Building2, Download, Search, ChevronDown, ChevronRight, Map, Loader2 } from 'lucide-react';
 import { INDIA_STATES_DISTRICTS } from '@/data/indiaData';
 import { useSession } from '@/auth/AuthContext';
 import { repository } from '@/backend';

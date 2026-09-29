@@ -37,7 +37,7 @@ class _ASHAHomeScreenState extends State<ASHAHomeScreen> {
     
     // Check for app updates silently in the background
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      AppUpdateService.checkAndPromptUpdate(context, showNoUpdateMessage: false);
+      AppUpdateService.checkAndPromptUpdate(context, showUpToDateFeedback: false);
     });
   }
 

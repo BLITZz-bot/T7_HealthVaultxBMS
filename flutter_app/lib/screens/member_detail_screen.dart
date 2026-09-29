@@ -723,7 +723,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen>
                   if (ok > 0 && context.mounted) {
                     _refresh();
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(LanguageService.tr('save_record') ?? 'Record saved'), backgroundColor: Colors.green),
+                      SnackBar(content: Text(LanguageService.tr('save_record')), backgroundColor: Colors.green),
                     );
                   } else if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(

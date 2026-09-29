@@ -7,7 +7,7 @@ class QrScreen extends StatelessWidget {
   final Map<String, dynamic> member;
   final String familySalt;
 
-  const QrScreen({Key? key, required this.member, required this.familySalt}) : super(key: key);
+  const QrScreen({super.key, required this.member, required this.familySalt});
 
   @override
   Widget build(BuildContext context) {
@@ -25,7 +25,7 @@ class QrScreen extends StatelessWidget {
         elevation: 0,
         iconTheme: const IconThemeData(color: Color(0xFF32104E)),
         title: Text(
-          LanguageService.tr('patient_qr') ?? 'Patient QR',
+          LanguageService.tr('patient_qr'),
           style: const TextStyle(color: Color(0xFF32104E), fontWeight: FontWeight.bold),
         ),
       ),

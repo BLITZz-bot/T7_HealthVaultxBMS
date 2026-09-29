@@ -465,7 +465,6 @@ class LocalDbService {
           final userObj = authData['user'];
           final userId = userObj?['id'];
           final userEmail = userObj?['email'] ?? trimmedUser;
-          final accessToken = authData['access_token'] ?? '';
 
           // -------------------------------------------------------------
           // AUTO-HEAL: If the user deleted and recreated their Supabase Auth 
