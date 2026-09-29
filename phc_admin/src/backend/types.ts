@@ -35,6 +35,7 @@ export interface AshaWorker {
   lastSyncAt: string | null;
   householdCount: number;
   villageNames: string[];
+  walletAddress: string | null;
 }
 
 export interface NewAshaWorker {
@@ -46,6 +47,8 @@ export interface NewAshaWorker {
   state?: string;
   district?: string;
   villageOrWard: string;
+  walletAddress?: string;
+  walletPrivateKey?: string;
 }
 
 export interface Household {
@@ -57,6 +60,25 @@ export interface Household {
   memberCount: number;
   updatedAt: string;
 }
+
+export interface State {
+  id: string;
+  name: string;
+}
+
+export interface District {
+  id: string;
+  state_id: string;
+  name: string;
+}
+
+export interface Area {
+  id: string;
+  district_id: string;
+  block: string;
+  village_or_ward: string;
+}
+
 
 export type AlertSeverity = 'low' | 'medium' | 'high' | 'critical';
 export type AlertStatus = 'open' | 'acknowledged' | 'resolved';
@@ -111,4 +133,4 @@ export interface NewVisitTask {
 }
 
 /** Tables the UI can receive live-change notifications for. */
-export type LiveTable = 'alerts' | 'referrals' | 'visit_tasks' | 'households' | 'profiles';
+export type LiveTable = 'alerts' | 'referrals' | 'visit_tasks' | 'households' | 'profiles' | 'states' | 'districts' | 'villages';

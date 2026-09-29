@@ -13,6 +13,7 @@ Routes:
   POST /visit             ← APK outbox → StipendVault
   GET  /verify/{hash}     ← Hospital verifier (public read-only)
   GET  /worker/{address}  ← Worker balance + status
+  POST /worker/generate   ← Generate new wallet and register on chain
   GET  /health            ← Chain connectivity check
 """
 
@@ -381,6 +382,36 @@ async def verify_record(record_hash: str):
         "explorer":        f"https://testnet.mstscan.com/address/{record_hash}" if anchor["exists"] else None,
     }
 
+
+@app.post("/worker/generate")
+async def generate_worker_wallet():
+    """Generates a new Ethereum wallet for a worker and registers it on the smart contract."""
+    from eth_account import Account
+    import secrets
+    
+    if chain is None:
+        raise HTTPException(status_code=503, detail="Relay in offline mode")
+
+    # Generate random private key and wallet
+    priv = secrets.token_hex(32)
+    private_key = "0x" + priv
+    acct = Account.from_key(private_key)
+    wallet_address = acct.address
+
+    # Register the worker on the blockchain (using admin/deployer key)
+    # The smart contract expects: registerWorker(address _worker, bytes32 _credHash)
+    # We will just pass a dummy credHash for now as we trust the PHC admin.
+    dummy_cred_hash = "0x" + ("00" * 32)
+    try:
+        tx_hash = chain.register_worker(wallet_address, dummy_cred_hash)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to register on-chain: {str(e)}")
+
+    return {
+        "wallet_address": wallet_address,
+        "private_key": private_key,
+        "tx_hash": tx_hash
+    }
 
 @app.get("/worker/{address}")
 async def worker_status(address: str):

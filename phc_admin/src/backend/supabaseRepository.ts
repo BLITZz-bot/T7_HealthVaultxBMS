@@ -6,8 +6,10 @@ import type {
   AlertStatus,
   AshaWorker,
   DashboardStats,
+  District,
   Household,
   Referral,
+  State,
   VisitTask,
 } from './types';
 
@@ -66,6 +68,7 @@ export const supabaseRepository: PhcRepository = {
         lastSyncAt: str(r.last_sync_at),
         householdCount: Number(r.household_count),
         villageNames: (r.village_names as string[] | null) ?? [],
+        walletAddress: str(r.wallet_address),
       }),
     );
   },
@@ -82,11 +85,38 @@ export const supabaseRepository: PhcRepository = {
         username: input.username.trim(),
         phone: input.phone.trim(),
         is_active: true,
+        wallet_address: input.walletAddress,
+        wallet_private_key: input.walletPrivateKey,
       })
       .select()
       .single();
 
     if (error) throw new Error(error.message);
+
+    const userId = data.user_id || data.id;
+    const villageNames = input.villageOrWard ? input.villageOrWard.split(',').map(v => v.trim()).filter(v => v) : [];
+    
+    if (villageNames.length > 0) {
+      try {
+        // 1. Insert villages (ignore duplicates if they exist, but Supabase standard insert returns new rows)
+        const { data: insertedVillages, error: vError } = await sb
+          .from('villages')
+          .insert(villageNames.map(name => ({ phc_id: phcId, name })))
+          .select('id');
+
+        if (!vError && insertedVillages) {
+          // 2. Link villages to profile
+          await sb
+            .from('profile_villages')
+            .insert(insertedVillages.map(v => ({
+              user_id: userId,
+              village_id: v.id
+            })));
+        }
+      } catch (e) {
+        console.warn('Failed to save villages to Supabase:', e);
+      }
+    }
 
     return {
       id: String(data.id),
@@ -95,7 +125,8 @@ export const supabaseRepository: PhcRepository = {
       isActive: true,
       lastSyncAt: null,
       householdCount: 0,
-      villageNames: input.villageOrWard ? [input.villageOrWard.trim()] : [],
+      villageNames: villageNames,
+      walletAddress: input.walletAddress ?? null,
     };
   },
 
@@ -260,6 +291,69 @@ export const supabaseRepository: PhcRepository = {
         .eq('phc_id', phcId)
         .select('id'),
     );
+  },
+
+  async getStates() {
+    const rows = unwrap(await getSupabase().from('states').select('*').order('name')) as Row[];
+    return rows.map((r): State => ({ id: String(r.id), name: String(r.name) }));
+  },
+
+  async getDistricts() {
+    const rows = unwrap(await getSupabase().from('districts').select('*').order('name')) as Row[];
+    return rows.map((r): District => ({ id: String(r.id), state_id: String(r.state_id), name: String(r.name) }));
+  },
+
+  async getAreas(phcId) {
+    const rows = unwrap(await getSupabase().from('villages').select('*').eq('phc_id', phcId).order('name')) as Row[];
+    return rows.map((r): import('./types').Area => ({ 
+      id: String(r.id), 
+      district_id: str(r.district_id) || '', 
+      block: str(r.block) || 'General', 
+      village_or_ward: String(r.name) 
+    }));
+  },
+
+  async addState(name) {
+    const { data, error } = await getSupabase().from('states').insert({ name }).select().single();
+    if (error) throw new Error(error.message);
+    return { id: String(data.id), name: String(data.name) };
+  },
+
+  async addDistrict(stateId, name) {
+    const { data, error } = await getSupabase().from('districts').insert({ state_id: stateId, name }).select().single();
+    if (error) throw new Error(error.message);
+    return { id: String(data.id), state_id: String(data.state_id), name: String(data.name) };
+  },
+
+  async addArea(phcId, districtId, block, villageName) {
+    const { data, error } = await getSupabase().from('villages').insert({ 
+      phc_id: phcId,
+      district_id: districtId,
+      block: block,
+      name: villageName 
+    }).select().single();
+    if (error) throw new Error(error.message);
+    return { 
+      id: String(data.id), 
+      district_id: str(data.district_id) || '', 
+      block: str(data.block) || 'General', 
+      village_or_ward: String(data.name) 
+    };
+  },
+
+  async deleteState(id) {
+    const { error } = await getSupabase().from('states').delete().eq('id', id);
+    if (error) throw new Error(error.message);
+  },
+
+  async deleteDistrict(id) {
+    const { error } = await getSupabase().from('districts').delete().eq('id', id);
+    if (error) throw new Error(error.message);
+  },
+
+  async deleteArea(id) {
+    const { error } = await getSupabase().from('villages').delete().eq('id', id);
+    if (error) throw new Error(error.message);
   },
 
   subscribe(phcId, table, onChange) {

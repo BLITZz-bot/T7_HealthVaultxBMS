@@ -22,7 +22,7 @@ class LocalDbService {
 
     return await openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE users(
@@ -219,6 +219,18 @@ class LocalDbService {
         try {
           await db.execute('UPDATE users SET profile_image = NULL WHERE length(profile_image) > 150000');
         } catch (_) {}
+        if (oldVersion < 7) {
+          try {
+            await db.execute('ALTER TABLE users ADD COLUMN cloud_id TEXT');
+            await db.execute('ALTER TABLE users ADD COLUMN phc_id TEXT');
+            await db.execute('ALTER TABLE families ADD COLUMN cloud_id TEXT');
+            await db.execute('ALTER TABLE families ADD COLUMN is_synced INTEGER DEFAULT 0');
+            await db.execute('ALTER TABLE members ADD COLUMN cloud_id TEXT');
+            await db.execute('ALTER TABLE members ADD COLUMN is_synced INTEGER DEFAULT 0');
+            await db.execute('ALTER TABLE medical_records ADD COLUMN cloud_id TEXT');
+            await db.execute('ALTER TABLE medical_records ADD COLUMN is_synced INTEGER DEFAULT 0');
+          } catch (_) {}
+        }
       },
     );
   }
@@ -259,7 +271,7 @@ class LocalDbService {
     if (_supabaseUrl.isNotEmpty && _supabaseAnonKey.isNotEmpty) {
       try {
         final uri = Uri.parse(
-          '$_supabaseUrl/rest/v1/profiles?role=eq.asha&phone=eq.$trimmedPhone&select=*'
+          '$_supabaseUrl/rest/v1/profiles?role=eq.asha&phone=eq.$trimmedPhone&select=*,phc:phcs(*),profile_villages(village:villages(*))'
         );
         final response = await http.get(
           uri,
@@ -300,14 +312,100 @@ class LocalDbService {
                 final names = fullName.split(' ');
                 final fName = names.isNotEmpty ? names.first : trimmedName;
                 final lName = names.length > 1 ? names.sublist(1).join(' ') : '';
-                await db.insert('users', {
+                
+                // Extract PHC state and district from Supabase
+                final phc = cloudProfile['phc'];
+                final String cloudState = phc != null && phc['state'] != null ? phc['state'].toString() : 'Synced State';
+                final String cloudDistrict = phc != null && phc['district'] != null ? phc['district'].toString() : 'Synced District';
+                
+                // Get or create State, District, Area for synced cloud workers
+                final stateRes = await db.query('states', where: 'name = ?', whereArgs: [cloudState]);
+                int stateId;
+                if (stateRes.isEmpty) {
+                  stateId = await db.insert('states', {'name': cloudState});
+                } else {
+                  stateId = stateRes.first['id'] as int;
+                }
+
+                final distRes = await db.query('districts', where: 'name = ? AND state_id = ?', whereArgs: [cloudDistrict, stateId]);
+                int distId;
+                if (distRes.isEmpty) {
+                  distId = await db.insert('districts', {'name': cloudDistrict, 'state_id': stateId});
+                } else {
+                  distId = distRes.first['id'] as int;
+                }
+                int newUserId = await db.insert('users', {
                   'username': username.isNotEmpty ? username : trimmedName.toLowerCase().replaceAll(' ', '_'),
                   'first_name': fName,
                   'last_name': lName,
                   'role': 'asha',
                   'phone_number': trimmedPhone,
+                  'state': stateId.toString(),
+                  'district': distId.toString(),
                 });
+
+                final profileVillages = cloudProfile['profile_villages'] as List<dynamic>? ?? [];
+                if (profileVillages.isNotEmpty) {
+                  for (var pv in profileVillages) {
+                    final village = pv['village'];
+                    if (village != null) {
+                      final areaName = village['name']?.toString() ?? 'Synced Area';
+                      final areaRes = await db.query('areas', where: 'village_or_ward = ? AND district_id = ?', whereArgs: [areaName, distId]);
+                      int areaId = areaRes.isEmpty ? await db.insert('areas', {'village_or_ward': areaName, 'block': 'Synced Block', 'district_id': distId}) : areaRes.first['id'] as int;
+                      await db.insert('user_areas', {'user_id': newUserId, 'area_id': areaId});
+                    }
+                  }
+                } else {
+                  final areaRes = await db.query('areas', where: 'village_or_ward = ? AND district_id = ?', whereArgs: ['Synced Area', distId]);
+                  int areaId = areaRes.isEmpty ? await db.insert('areas', {'village_or_ward': 'Synced Area', 'block': 'Synced Block', 'district_id': distId}) : areaRes.first['id'] as int;
+                  await db.insert('user_areas', {'user_id': newUserId, 'area_id': areaId});
+                }
+              } else {
+                // If user exists locally but has NO areas, fix it
+                int existUserId = localMatches.first['id'] as int;
+                final areaMaps = await db.query('user_areas', where: 'user_id = ?', whereArgs: [existUserId]);
+                if (areaMaps.isEmpty) {
+                  final phc = cloudProfile['phc'];
+                  final String cloudState = phc != null && phc['state'] != null ? phc['state'].toString() : 'Synced State';
+                  final String cloudDistrict = phc != null && phc['district'] != null ? phc['district'].toString() : 'Synced District';
+                  
+                  final stateRes = await db.query('states', where: 'name = ?', whereArgs: [cloudState]);
+                  int stateId = stateRes.isEmpty ? await db.insert('states', {'name': cloudState}) : stateRes.first['id'] as int;
+                  final distRes = await db.query('districts', where: 'name = ? AND state_id = ?', whereArgs: [cloudDistrict, stateId]);
+                  int distId = distRes.isEmpty ? await db.insert('districts', {'name': cloudDistrict, 'state_id': stateId}) : distRes.first['id'] as int;
+                  
+                  final profileVillages = cloudProfile['profile_villages'] as List<dynamic>? ?? [];
+                  if (profileVillages.isNotEmpty) {
+                    for (var pv in profileVillages) {
+                      final village = pv['village'];
+                      if (village != null) {
+                        final areaName = village['name']?.toString() ?? 'Synced Area';
+                        final areaRes = await db.query('areas', where: 'village_or_ward = ? AND district_id = ?', whereArgs: [areaName, distId]);
+                        int areaId = areaRes.isEmpty ? await db.insert('areas', {'village_or_ward': areaName, 'block': 'Synced Block', 'district_id': distId}) : areaRes.first['id'] as int;
+                        await db.insert('user_areas', {'user_id': existUserId, 'area_id': areaId});
+                      }
+                    }
+                  } else {
+                    final areaRes = await db.query('areas', where: 'village_or_ward = ? AND district_id = ?', whereArgs: ['Synced Area', distId]);
+                    int areaId = areaRes.isEmpty ? await db.insert('areas', {'village_or_ward': 'Synced Area', 'block': 'Synced Block', 'district_id': distId}) : areaRes.first['id'] as int;
+                    await db.insert('user_areas', {'user_id': existUserId, 'area_id': areaId});
+                  }
+                }
               }
+
+              // Update cloud_id and phc_id from Supabase
+              String? tempWalletAddress;
+              String? tempWalletPrivateKey;
+              try {
+                tempWalletAddress = cloudProfile['wallet_address']?.toString();
+                tempWalletPrivateKey = cloudProfile['wallet_private_key']?.toString();
+                
+                final updateMaps = {
+                  'cloud_id': cloudProfile['user_id']?.toString() ?? cloudProfile['id']?.toString(),
+                  'phc_id': cloudProfile['phc_id']?.toString(),
+                };
+                await db.update('users', updateMaps, where: 'phone_number = ? AND role = ?', whereArgs: [trimmedPhone, 'asha']);
+              } catch (_) {}
 
               // Load and return user payload from local DB
               final refreshed = await db.query(
@@ -316,7 +414,10 @@ class LocalDbService {
                 whereArgs: [trimmedPhone, 'asha'],
               );
               if (refreshed.isNotEmpty) {
-                return await _buildUserPayload(refreshed.first);
+                final payload = await _buildUserPayload(refreshed.first);
+                payload['user']['wallet_address'] = tempWalletAddress;
+                payload['user']['wallet_private_key'] = tempWalletPrivateKey;
+                return payload;
               }
             }
           }
@@ -988,6 +1089,34 @@ class LocalDbService {
       'block': block,
       'village_or_ward': villageOrWard,
     });
+
+    // Auto-sync to Supabase so it appears in the Web App Admin panel
+    try {
+      final headers = {
+        'apikey': _supabaseAnonKey,
+        'Authorization': 'Bearer $_supabaseAnonKey',
+        'Content-Type': 'application/json',
+      };
+      
+      // Get the first PHC to attach this Area to
+      final phcRes = await http.get(Uri.parse('$_supabaseUrl/rest/v1/phcs?limit=1&select=id'), headers: headers);
+      if (phcRes.statusCode == 200) {
+        final List phcs = jsonDecode(phcRes.body);
+        if (phcs.isNotEmpty) {
+          final phcId = phcs.first['id'];
+          // Insert into villages on Supabase
+          await http.post(
+            Uri.parse('$_supabaseUrl/rest/v1/villages'),
+            headers: headers,
+            body: jsonEncode({
+              'phc_id': phcId,
+              'name': villageOrWard,
+            }),
+          );
+        }
+      }
+    } catch (_) {}
+
     return true;
   }
 

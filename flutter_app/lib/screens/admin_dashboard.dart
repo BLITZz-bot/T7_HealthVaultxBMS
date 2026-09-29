@@ -4,6 +4,7 @@ import '../services/image_utils.dart';
 import '../services/language_service.dart';
 import '../widgets/language_switcher_widget.dart';
 import '../widgets/searchable_dropdown.dart';
+import '../services/cloud_sync_service.dart';
 import 'login_screen.dart';
 import 'admin_settings_screen.dart';
 import 'state_jurisdiction_detail_screen.dart';
@@ -40,6 +41,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _refreshData();
+    
+    // Background sync of master data
+    CloudSyncService.syncMasterJurisdictions().then((success) {
+      if (success && mounted) {
+        _refreshData();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Master Jurisdictions synced from Cloud.'),
+            backgroundColor: Color(0xFF00796B),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    });
     
     // Welcome SnackBar
     WidgetsBinding.instance.addPostFrameCallback((_) {

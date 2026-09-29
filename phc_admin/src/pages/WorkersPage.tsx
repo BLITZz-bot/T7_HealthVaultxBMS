@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { repository } from '@/backend';
 import { useSession } from '@/auth/AuthContext';
 import { useLiveQuery } from '@/hooks/useLiveQuery';
 import { Badge, Button, Card, EmptyState, InlineError, PageHeader, QueryView } from '@/components/ui';
 import { formatDateTime, formatRelative, hoursSince } from '@/lib/format';
 import { INDIA_STATES_DISTRICTS } from '@/data/indiaData';
-import { UserPlus, X } from 'lucide-react';
+import { UserPlus, X, Coins } from 'lucide-react';
 
 export function WorkersPage() {
   const session = useSession();
@@ -21,7 +21,8 @@ export function WorkersPage() {
   const [aadhaar, setAadhaar] = useState('');
   const [selectedState, setSelectedState] = useState('Karnataka');
   const [selectedDistrict, setSelectedDistrict] = useState(INDIA_STATES_DISTRICTS['Karnataka']?.[0] ?? '');
-  const [village, setVillage] = useState('');
+  const [villages, setVillages] = useState<string[]>([]);
+  const [villageInput, setVillageInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -47,8 +48,28 @@ export function WorkersPage() {
       return;
     }
 
+    if (villages.length === 0) {
+      setFormError('Please assign at least one Jurisdiction Area (Village/Ward) to the worker. (Type it and press Enter)');
+      return;
+    }
+
     setIsSaving(true);
     try {
+      // 1. Generate unique blockchain wallet for the worker
+      let walletAddress, walletPrivateKey;
+      try {
+        const walletRes = await fetch('http://127.0.0.1:8000/worker/generate', { method: 'POST' });
+        if (!walletRes.ok) throw new Error('Failed to generate blockchain wallet');
+        const walletData = await walletRes.json();
+        walletAddress = walletData.wallet_address;
+        walletPrivateKey = walletData.private_key;
+      } catch (err: any) {
+        setFormError('Blockchain Wallet Error: ' + err.message);
+        setIsSaving(false);
+        return;
+      }
+
+      // 2. Save worker to Supabase with the generated wallet
       await repository.createWorker(session.phcId, {
         username: username.trim(),
         firstName: firstName.trim(),
@@ -57,7 +78,9 @@ export function WorkersPage() {
         aadhaar: aadhaar.trim() || undefined,
         state: selectedState,
         district: selectedDistrict,
-        villageOrWard: village.trim() || `${selectedDistrict} Area`,
+        villageOrWard: villages.length > 0 ? villages.join(', ') : `${selectedDistrict} Area`,
+        walletAddress,
+        walletPrivateKey,
       });
 
       // Reset and close
@@ -66,7 +89,8 @@ export function WorkersPage() {
       setLastName('');
       setPhone('');
       setAadhaar('');
-      setVillage('');
+      setVillages([]);
+      setVillageInput('');
       setIsModalOpen(false);
       workers.reload();
     } catch (err: any) {
@@ -131,6 +155,7 @@ export function WorkersPage() {
                       <th className="px-4 py-2.5 text-right font-medium">Households</th>
                       <th className="px-4 py-2.5 font-medium">Last Sync</th>
                       <th className="px-4 py-2.5 font-medium">Status</th>
+                      <th className="px-4 py-2.5 font-medium">Wallet</th>
                       <th className="px-4 py-2.5 text-right font-medium">Action</th>
                     </tr>
                   </thead>
@@ -150,6 +175,15 @@ export function WorkersPage() {
                           <Badge tone={w.isActive ? 'green' : 'neutral'}>
                             {w.isActive ? 'Active' : 'Inactive'}
                           </Badge>
+                        </td>
+                        <td className="px-4 py-3">
+                          {w.walletAddress ? (
+                            <div className="inline-flex font-mono text-[11px] bg-slate-100 text-slate-600 px-2 py-1 rounded border border-slate-200">
+                              {w.walletAddress.substring(0, 6)}...{w.walletAddress.substring(w.walletAddress.length - 4)}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-slate-400 italic">Unregistered</span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-right">
                           <button
@@ -300,12 +334,31 @@ export function WorkersPage() {
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-700">Jurisdiction Village / Ward *</label>
+                <label className="mb-1 block text-xs font-medium text-slate-700">Jurisdiction Areas (Press Enter to add)</label>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {villages.map((v, i) => (
+                    <span key={i} className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-700 border border-brand-200">
+                      {v}
+                      <button type="button" onClick={() => setVillages(villages.filter((_, idx) => idx !== i))} className="text-brand-500 hover:text-brand-900">
+                        <X className="size-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
                 <input
                   type="text"
-                  value={village}
-                  onChange={(e) => setVillage(e.target.value)}
-                  placeholder="e.g. Hosakote Ward 4, Nandagudi Village"
+                  value={villageInput}
+                  onChange={(e) => setVillageInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (villageInput.trim() && !villages.includes(villageInput.trim())) {
+                        setVillages([...villages, villageInput.trim()]);
+                        setVillageInput('');
+                      }
+                    }
+                  }}
+                  placeholder="e.g. Ward 4 (Press Enter)"
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-600"
                 />
               </div>

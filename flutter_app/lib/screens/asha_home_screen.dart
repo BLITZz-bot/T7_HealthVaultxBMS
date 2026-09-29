@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../services/local_db_service.dart';
+import '../services/cloud_sync_service.dart';
+import '../services/blockchain_service.dart';
+import '../services/app_update_service.dart';
 import '../services/image_utils.dart';
 import '../widgets/language_switcher_widget.dart';
 import '../services/language_service.dart';
@@ -22,16 +25,50 @@ class _ASHAHomeScreenState extends State<ASHAHomeScreen> {
   late Future<List<dynamic>> _familiesFuture;
   int _currentIndex = 0;
 
+  int _pendingSyncCount = 0;
+  String _careCoinBalance = 'Loading...';
+  late String _walletAddress;
+
   @override
   void initState() {
     super.initState();
+    _walletAddress = widget.user['wallet_address'] ?? BlockchainService.DEMO_WORKER_ADDRESS;
     _refreshFamilies();
+    
+    // Check for app updates silently in the background
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AppUpdateService.checkAndPromptUpdate(context, showNoUpdateMessage: false);
+    });
   }
 
   void _refreshFamilies() {
     setState(() {
       _familiesFuture = LocalDbService.getFamilies(widget.token);
     });
+    _updateSyncCount();
+    _fetchWalletBalance();
+  }
+
+  Future<void> _fetchWalletBalance() async {
+    final status = await BlockchainService.getWorkerBalance(_walletAddress);
+    if (mounted && status != null) {
+      setState(() {
+        _careCoinBalance = (status['care_balance'] ?? 0).toString();
+      });
+    } else if (mounted) {
+      setState(() {
+        _careCoinBalance = 'Error';
+      });
+    }
+  }
+
+  Future<void> _updateSyncCount() async {
+    final count = await CloudSyncService.getPendingSyncCount();
+    if (mounted) {
+      setState(() {
+        _pendingSyncCount = count;
+      });
+    }
   }
 
   void _showAddFamilyDialog() {
@@ -1192,6 +1229,96 @@ class _ASHAHomeScreenState extends State<ASHAHomeScreen> {
                 ),
             ],
           ),
+          // CareCoin Wallet Card
+          _buildInfoCard(
+            title: 'Smart Judiciary Rewards',
+            icon: Icons.account_balance_wallet,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'CareCoin Balance',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Icon(Icons.monetization_on, color: Colors.amber.shade700, size: 20),
+                      const SizedBox(width: 4),
+                      Text(
+                        _careCoinBalance,
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.amber.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Wallet: ${_walletAddress.substring(0, 6)}...${_walletAddress.substring(_walletAddress.length - 4)}',
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // Cloud Sync Status Card
+          _buildInfoCard(
+            title: 'Cloud Sync Status',
+            icon: Icons.cloud_sync_outlined,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    _pendingSyncCount == 0 ? 'All data is up to date' : '$_pendingSyncCount records pending sync',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: _pendingSyncCount == 0 ? Colors.green.shade700 : Colors.orange.shade700,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (_pendingSyncCount == 0)
+                    const Icon(Icons.check_circle, color: Colors.green)
+                  else
+                    const Icon(Icons.warning_amber_rounded, color: Colors.orange),
+                ],
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _pendingSyncCount == 0 ? Colors.grey.shade400 : const Color(0xFF00897B),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  icon: const Icon(Icons.cloud_upload, size: 18),
+                  label: Text(_pendingSyncCount == 0 ? 'Synced' : 'Sync Now'),
+                  onPressed: _pendingSyncCount == 0 ? null : () async {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Starting Cloud Sync...')),
+                    );
+                    final success = await CloudSyncService.syncAll();
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(success ? 'Cloud Sync Complete!' : 'Cloud Sync Failed.')),
+                      );
+                      _updateSyncCount();
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
           // Language Settings Card
           _buildInfoCard(
             title: LanguageService.tr('language_settings'),
@@ -1302,6 +1429,22 @@ class _ASHAHomeScreenState extends State<ASHAHomeScreen> {
             ? '${LanguageService.tr('asha_portal')} (${widget.user['first_name'] ?? widget.user['username']})'
             : LanguageService.tr('asha_profile')),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.cloud_upload),
+            tooltip: 'Sync to Cloud',
+            onPressed: () async {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Starting Cloud Sync...')),
+              );
+              final success = await CloudSyncService.syncAll();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(success ? 'Cloud Sync Complete!' : 'Cloud Sync Failed.')),
+                );
+                _updateSyncCount();
+              }
+            },
+          ),
           const LanguageSwitcherWidget(),
           IconButton(
             icon: const Icon(Icons.logout),

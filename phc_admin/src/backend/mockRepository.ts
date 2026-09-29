@@ -14,6 +14,10 @@ const delay = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 const clone = <T,>(v: T): T => structuredClone(v);
 const DAY = 86_400_000;
 
+let mockStates: any[] = [];
+let mockDistricts: any[] = [];
+let mockAreas: any[] = [];
+
 function assertPhc(phcId: string) {
   if (phcId !== DEMO_PHC.id) throw new Error('Not authorised for this PHC.');
 }
@@ -60,6 +64,7 @@ export const mockRepository: PhcRepository = {
       lastSyncAt: null,
       householdCount: 0,
       villageNames: input.villageOrWard ? [input.villageOrWard.trim()] : [],
+      walletAddress: input.walletAddress ?? null,
     };
     db.workers.unshift(newWorker);
     emit('profiles');
@@ -155,6 +160,39 @@ export const mockRepository: PhcRepository = {
     task.status = 'cancelled';
     emit('visit_tasks');
   },
+
+  async getStates() { await delay(); return clone(mockStates); },
+  async getDistricts() { await delay(); return clone(mockDistricts); },
+  async getAreas(phcId) { assertPhc(phcId); await delay(); return clone(mockAreas); },
+  
+  async addState(name) {
+    await delay();
+    const state = { id: `s-${Date.now()}`, name };
+    mockStates.push(state);
+    emit('states');
+    return state;
+  },
+
+  async addDistrict(stateId, name) {
+    await delay();
+    const dist = { id: `d-${Date.now()}`, state_id: stateId, name };
+    mockDistricts.push(dist);
+    emit('districts');
+    return dist;
+  },
+
+  async addArea(phcId, districtId, block, villageName) {
+    assertPhc(phcId);
+    await delay();
+    const area = { id: `a-${Date.now()}`, district_id: districtId, block, village_or_ward: villageName };
+    mockAreas.push(area);
+    emit('villages');
+    return area;
+  },
+
+  async deleteState(id) { await delay(); mockStates = mockStates.filter(s => s.id !== id); emit('states'); },
+  async deleteDistrict(id) { await delay(); mockDistricts = mockDistricts.filter(d => d.id !== id); emit('districts'); },
+  async deleteArea(id) { await delay(); mockAreas = mockAreas.filter(a => a.id !== id); emit('villages'); },
 
   subscribe(phcId, table, onChange) {
     assertPhc(phcId);

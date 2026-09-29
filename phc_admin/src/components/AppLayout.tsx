@@ -12,6 +12,8 @@ import {
   Settings,
   Siren,
   Users,
+  Coins,
+  MapPin,
   X,
 } from 'lucide-react';
 import { useAuth, useSession } from '@/auth/AuthContext';
@@ -24,7 +26,9 @@ const NAV = [
   { to: '/referrals', label: 'Referrals', icon: Send },
   { to: '/tasks', label: 'Visit tasks', icon: ClipboardList },
   { to: '/workers', label: 'ASHA workers', icon: Users },
+  { to: '/jurisdictions', label: 'Master Jurisdictions', icon: MapPin },
   { to: '/households', label: 'Households', icon: Home },
+  { to: '/rewards', label: 'CareCoins', icon: Coins },
   { to: '/reports', label: 'Reports', icon: BarChart3 },
   { to: '/settings', label: 'Settings', icon: Settings },
 ] as const;

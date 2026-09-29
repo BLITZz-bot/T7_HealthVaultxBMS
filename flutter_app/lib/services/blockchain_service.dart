@@ -151,4 +151,14 @@ class BlockchainService {
     if (results.isNotEmpty) return results.first;
     return null;
   }
+
+  static Future<Map<String, dynamic>?> getWorkerBalance(String address) async {
+    try {
+      final response = await http.get(Uri.parse('$RELAY_URL/worker/$address'));
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+    } catch (_) {}
+    return null;
+  }
 }

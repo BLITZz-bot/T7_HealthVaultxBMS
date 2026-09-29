@@ -1,14 +1,16 @@
-import type {
   Alert,
   AlertStatus,
+  Area,
   AshaWorker,
   DashboardStats,
+  District,
   Household,
   LiveTable,
   NewAshaWorker,
   NewVisitTask,
   Referral,
   ReferralStatus,
+  State,
   VisitTask,
 } from './types';
 
@@ -43,6 +45,16 @@ export interface PhcRepository {
   listTasks(phcId: string): Promise<VisitTask[]>;
   createTask(phcId: string, input: NewVisitTask): Promise<void>;
   cancelTask(phcId: string, taskId: string): Promise<void>;
+
+  getStates(): Promise<State[]>;
+  getDistricts(): Promise<District[]>;
+  getAreas(phcId: string): Promise<Area[]>;
+  addState(name: string): Promise<State>;
+  addDistrict(stateId: string, name: string): Promise<District>;
+  addArea(phcId: string, districtId: string, block: string, villageName: string): Promise<Area>;
+  deleteState(id: string): Promise<void>;
+  deleteDistrict(id: string): Promise<void>;
+  deleteArea(id: string): Promise<void>;
 
   /** Calls `onChange` when a row in `table` changes (by this panel or an ASHA device). Returns an unsubscribe fn. */
   subscribe(phcId: string, table: LiveTable, onChange: () => void): () => void;

@@ -19,12 +19,12 @@ export interface MockDb {
 
 export function createMockDb(): MockDb {
   const workers: AshaWorker[] = [
-    { id: 'asha-1', fullName: 'Lakshmi Devi', phone: '+91 98450 11001', isActive: true, lastSyncAt: hoursAgo(2), householdCount: 0, villageNames: ['Nandagudi'] },
-    { id: 'asha-2', fullName: 'Kavitha R', phone: '+91 98450 11002', isActive: true, lastSyncAt: hoursAgo(20), householdCount: 0, villageNames: ['Sulibele'] },
-    { id: 'asha-3', fullName: 'Shobha M', phone: '+91 98450 11003', isActive: true, lastSyncAt: hoursAgo(96), householdCount: 0, villageNames: ['Jadigenahalli'] },
-    { id: 'asha-4', fullName: 'Renuka B', phone: '+91 98450 11004', isActive: true, lastSyncAt: hoursAgo(5), householdCount: 0, villageNames: ['Anugondanahalli'] },
-    { id: 'asha-5', fullName: 'Manjula K', phone: '+91 98450 11005', isActive: true, lastSyncAt: null, householdCount: 0, villageNames: ['Kumbalahalli'] },
-    { id: 'asha-6', fullName: 'Geetha S', phone: null, isActive: false, lastSyncAt: hoursAgo(24 * 40), householdCount: 0, villageNames: ['Nandagudi'] },
+    { id: 'asha-1', fullName: 'Lakshmi Devi', phone: '+91 98450 11001', isActive: true, lastSyncAt: hoursAgo(2), householdCount: 0, villageNames: ['Nandagudi'], walletAddress: null },
+    { id: 'asha-2', fullName: 'Kavitha R', phone: '+91 98450 11002', isActive: true, lastSyncAt: hoursAgo(20), householdCount: 0, villageNames: ['Sulibele'], walletAddress: null },
+    { id: 'asha-3', fullName: 'Shobha M', phone: '+91 98450 11003', isActive: true, lastSyncAt: hoursAgo(96), householdCount: 0, villageNames: ['Jadigenahalli'], walletAddress: null },
+    { id: 'asha-4', fullName: 'Renuka B', phone: '+91 98450 11004', isActive: true, lastSyncAt: hoursAgo(5), householdCount: 0, villageNames: ['Anugondanahalli'], walletAddress: null },
+    { id: 'asha-5', fullName: 'Manjula K', phone: '+91 98450 11005', isActive: true, lastSyncAt: null, householdCount: 0, villageNames: ['Kumbalahalli'], walletAddress: null },
+    { id: 'asha-6', fullName: 'Geetha S', phone: null, isActive: false, lastSyncAt: hoursAgo(24 * 40), householdCount: 0, villageNames: ['Nandagudi'], walletAddress: null },
   ];
 
   const heads = [
