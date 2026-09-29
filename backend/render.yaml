@@ -5,7 +5,13 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     autoDeploy: true
+    disk:
+      name: relay-data
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
+      - key: WORKER_KEYSTORE_PATH
+        value: /var/data/worker_keys.json
       - key: MST_RPC_URL
         value: https://testnetrpc.mstblockchain.com
       - key: CHAIN_ID

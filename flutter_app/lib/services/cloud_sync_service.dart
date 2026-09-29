@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'local_db_service.dart';
+import 'blockchain_service.dart';
 
 class CloudSyncService {
   static const String _supabaseUrl = String.fromEnvironment(
@@ -93,7 +94,7 @@ class CloudSyncService {
     }
   }
 
-  static Future<bool> syncAll() async {
+  static Future<bool> syncAll({String? workerAddress}) async {
     final db = await LocalDbService.database;
 
     // 1. Get logged in ASHA user
@@ -114,6 +115,8 @@ class CloudSyncService {
       'Content-Type': 'application/json',
       'Prefer': 'return=representation'
     };
+
+    var allSucceeded = true;
 
     // 2. Sync Families -> Households
     final unsyncedFamilies = await db.query('families', where: 'is_synced = 0 OR cloud_id IS NULL');
@@ -152,6 +155,7 @@ class CloudSyncService {
           }
         }
       } catch (e) {
+        allSucceeded = false;
         print("Error syncing family: $e");
       }
     }
@@ -195,6 +199,7 @@ class CloudSyncService {
           }
         }
       } catch (e) {
+        allSucceeded = false;
         print("Error syncing member: $e");
       }
     }
@@ -233,6 +238,7 @@ class CloudSyncService {
           }
         }
       } catch (e) {
+        allSucceeded = false;
         print("Error syncing vital: $e");
       }
     }
@@ -248,6 +254,15 @@ class CloudSyncService {
       );
     } catch(e) {}
 
-    return true;
+    if (workerAddress != null) {
+      try {
+        await BlockchainService.syncOutbox(workerAddress: workerAddress);
+      } catch (e) {
+        allSucceeded = false;
+        print('Error syncing blockchain outbox: $e');
+      }
+    }
+
+    return allSucceeded;
   }
 }

@@ -7,7 +7,6 @@ import 'local_db_service.dart';
 
 class BlockchainService {
   static const String RELAY_URL = 'https://t7-mst-health-vault.onrender.com';
-  static const String DEMO_WORKER_ADDRESS = '0xB7a280Cd618dB5a0E82D84306DB423728034A089';
 
   static final List<String> VITALS_FIELDS = [
     "hr",
@@ -78,7 +77,10 @@ class BlockchainService {
     });
   }
 
-  static Future<void> syncOutbox(String ashaToken) async {
+  static Future<void> syncOutbox({required String workerAddress}) async {
+    if (!RegExp(r'^0x[a-fA-F0-9]{40}$').hasMatch(workerAddress)) {
+      throw ArgumentError('A provisioned worker wallet is required before blockchain sync.');
+    }
     final db = await LocalDbService.database;
     final List<Map<String, dynamic>> pending = await db.query(
       'chain_outbox',
@@ -113,7 +115,7 @@ class BlockchainService {
           Uri.parse('$RELAY_URL/anchor'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({
-            'worker_address': DEMO_WORKER_ADDRESS,
+            'worker_address': workerAddress,
             'vitals': vitals,
             'beneficiary_id': memberId,
           }),
@@ -152,7 +154,8 @@ class BlockchainService {
     return null;
   }
 
-  static Future<Map<String, dynamic>?> getWorkerBalance(String address) async {
+  static Future<Map<String, dynamic>?> getWorkerBalance(String? address) async {
+    if (address == null || !RegExp(r'^0x[a-fA-F0-9]{40}$').hasMatch(address)) return null;
     try {
       final response = await http.get(Uri.parse('$RELAY_URL/worker/$address'));
       if (response.statusCode == 200) {

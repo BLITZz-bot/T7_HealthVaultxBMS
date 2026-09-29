@@ -76,6 +76,44 @@ export const supabaseRepository: PhcRepository = {
   async createWorker(phcId, input) {
     const fullName = `${input.firstName.trim()} ${input.lastName.trim()}`.trim();
     const sb = getSupabase();
+    const villageNames = input.villageOrWard
+      ? input.villageOrWard.split(',').map((v) => v.trim()).filter(Boolean)
+      : [];
+
+    // 1. Invoke provision-worker Edge Function for on-chain registration & DB record
+    try {
+      const { data: edgeData, error: edgeError } = await sb.functions.invoke('provision-worker', {
+        body: {
+          worker_name: fullName,
+          username: input.username.trim(),
+          phone: input.phone.trim(),
+          aadhaar_last4: input.aadhaar ? input.aadhaar.slice(-4) : '0000',
+          phc_id: phcId,
+          village_names: villageNames,
+        },
+      });
+
+      if (!edgeError && edgeData?.worker) {
+        const w = edgeData.worker;
+        return {
+          id: String(w.id),
+          fullName: String(w.full_name),
+          phone: str(w.phone),
+          isActive: true,
+          lastSyncAt: null,
+          householdCount: 0,
+          villageNames: villageNames,
+          walletAddress: str(w.wallet_address),
+        };
+      }
+      if (edgeError) {
+        console.warn('Edge function invoke error, falling back to direct DB insert:', edgeError);
+      }
+    } catch (e) {
+      console.warn('Edge function unavailable, falling back to direct DB insert:', e);
+    }
+
+    // 2. Direct insert fallback if Edge Function is offline
     const { data, error } = await sb
       .from('profiles')
       .insert({
@@ -85,33 +123,32 @@ export const supabaseRepository: PhcRepository = {
         username: input.username.trim(),
         phone: input.phone.trim(),
         is_active: true,
-        wallet_address: input.walletAddress,
-        wallet_private_key: input.walletPrivateKey,
       })
       .select()
       .single();
 
     if (error) throw new Error(error.message);
-
     const userId = data.user_id || data.id;
-    const villageNames = input.villageOrWard ? input.villageOrWard.split(',').map(v => v.trim()).filter(v => v) : [];
-    
+
     if (villageNames.length > 0) {
       try {
-        // 1. Insert villages (ignore duplicates if they exist, but Supabase standard insert returns new rows)
+        // Upsert villages (idempotent — avoids duplicate rows on retry)
         const { data: insertedVillages, error: vError } = await sb
           .from('villages')
-          .insert(villageNames.map(name => ({ phc_id: phcId, name })))
+          .upsert(
+            villageNames.map((name: string) => ({ phc_id: phcId, name: name.trim(), village_or_ward: name.trim() })),
+            { onConflict: 'phc_id,name' },
+          )
           .select('id');
 
         if (!vError && insertedVillages) {
           // 2. Link villages to profile
-          await sb
-            .from('profile_villages')
-            .insert(insertedVillages.map(v => ({
+          await sb.from('profile_villages').insert(
+            insertedVillages.map((v: { id: string }) => ({
               user_id: userId,
-              village_id: v.id
-            })));
+              village_id: v.id,
+            })),
+          );
         }
       } catch (e) {
         console.warn('Failed to save villages to Supabase:', e);
@@ -119,14 +156,14 @@ export const supabaseRepository: PhcRepository = {
     }
 
     return {
-      id: String(data.id),
+      id: String(userId),
       fullName: String(data.full_name),
       phone: str(data.phone),
       isActive: true,
       lastSyncAt: null,
       householdCount: 0,
       villageNames: villageNames,
-      walletAddress: input.walletAddress ?? null,
+      walletAddress: str(data.wallet_address),
     };
   },
 
@@ -135,7 +172,7 @@ export const supabaseRepository: PhcRepository = {
     const { error } = await sb
       .from('profiles')
       .update({ is_active: isActive })
-      .eq('id', workerId)
+      .eq('user_id', workerId)
       .eq('phc_id', phcId);
 
     if (error) throw new Error(error.message);
@@ -146,7 +183,7 @@ export const supabaseRepository: PhcRepository = {
     const { error } = await sb
       .from('profiles')
       .delete()
-      .eq('id', workerId)
+      .eq('user_id', workerId)
       .eq('phc_id', phcId);
 
     if (error) throw new Error(error.message);
@@ -304,12 +341,18 @@ export const supabaseRepository: PhcRepository = {
   },
 
   async getAreas(phcId) {
-    const rows = unwrap(await getSupabase().from('villages').select('*').eq('phc_id', phcId).order('name')) as Row[];
-    return rows.map((r): import('./types').Area => ({ 
-      id: String(r.id), 
-      district_id: str(r.district_id) || '', 
-      block: str(r.block) || 'General', 
-      village_or_ward: String(r.name) 
+    const rows = unwrap(
+      await getSupabase()
+        .from('villages')
+        .select('*')
+        .eq('phc_id', phcId)
+        .order('village_or_ward'),
+    ) as Row[];
+    return rows.map((r): import('./types').Area => ({
+      id: String(r.id),
+      district_id: str(r.district_id) || '',
+      block: str(r.block) || 'General',
+      village_or_ward: str(r.village_or_ward) || str(r.name) || '',
     }));
   },
 
@@ -326,18 +369,19 @@ export const supabaseRepository: PhcRepository = {
   },
 
   async addArea(phcId, districtId, block, villageName) {
-    const { data, error } = await getSupabase().from('villages').insert({ 
+    const { data, error } = await getSupabase().from('villages').insert({
       phc_id: phcId,
-      district_id: districtId,
-      block: block,
-      name: villageName 
+      district_id: districtId || null,
+      block: block || null,
+      name: villageName.trim(),
+      village_or_ward: villageName.trim(),
     }).select().single();
     if (error) throw new Error(error.message);
-    return { 
-      id: String(data.id), 
-      district_id: str(data.district_id) || '', 
-      block: str(data.block) || 'General', 
-      village_or_ward: String(data.name) 
+    return {
+      id: String(data.id),
+      district_id: str(data.district_id) || '',
+      block: str(data.block) || 'General',
+      village_or_ward: str(data.village_or_ward) || str(data.name) || '',
     };
   },
 

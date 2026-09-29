@@ -47,8 +47,6 @@ export interface NewAshaWorker {
   state?: string;
   district?: string;
   villageOrWard: string;
-  walletAddress?: string;
-  walletPrivateKey?: string;
 }
 
 export interface Household {

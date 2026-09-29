@@ -5,7 +5,6 @@ import { useLiveQuery } from '@/hooks/useLiveQuery';
 import { Badge, Button, Card, EmptyState, InlineError, PageHeader, QueryView } from '@/components/ui';
 import { formatDateTime, formatRelative, hoursSince } from '@/lib/format';
 import { UserPlus, X } from 'lucide-react';
-import { Wallet } from 'ethers';
 
 export function WorkersPage() {
   const session = useSession();
@@ -62,28 +61,8 @@ export function WorkersPage() {
 
     setIsSaving(true);
     try {
-      // 1. Generate genuine Ethereum wallet for the worker using ethers
-      const workerWallet = Wallet.createRandom();
-      const walletAddress = workerWallet.address;
-      const walletPrivateKey = workerWallet.privateKey;
-
-      // 2. Best-effort notify relay if available (does not block registration)
-      try {
-        fetch('https://t7-mst-health-vault.onrender.com/register-worker', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            worker_name: `${firstName.trim()} ${lastName.trim()}`.trim(),
-            phone: phone.trim(),
-            aadhaar_last4: aadhaar.trim().slice(-4) || '0000',
-            admin_address: '0xB7a280Cd618dB5a0E82D84306DB423728034A089',
-          }),
-        }).catch(() => {});
-      } catch {
-        // Relay offline or sleeping; ignore
-      }
-
-      // 3. Save worker to Supabase with the generated wallet
+      // Wallets are created only by the authenticated relay. Never create or
+      // store a private key in the browser or in Supabase.
       const stateObj = dbStates.find(s => s.id === selectedStateId);
       const districtObj = dbDistricts.find(d => d.id === selectedDistrictId);
 
@@ -96,8 +75,6 @@ export function WorkersPage() {
         state: stateObj ? stateObj.name : 'Unknown',
         district: districtObj ? districtObj.name : 'Unknown',
         villageOrWard: villages.length > 0 ? villages.join(', ') : `${districtObj ? districtObj.name : 'General'} Area`,
-        walletAddress,
-        walletPrivateKey,
       });
 
       // Reset and close
@@ -198,7 +175,7 @@ export function WorkersPage() {
                               {w.walletAddress.substring(0, 6)}...{w.walletAddress.substring(w.walletAddress.length - 4)}
                             </div>
                           ) : (
-                            <span className="text-xs text-slate-400 italic">Unregistered</span>
+                            <span className="text-xs text-slate-400 italic">Not provisioned</span>
                           )}
                         </td>
                         <td className="px-4 py-3 text-right">
@@ -385,7 +362,7 @@ export function WorkersPage() {
               <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100">
                 <div className="text-xs text-slate-500 flex items-center gap-1.5">
                   <span className="inline-block size-2 rounded-full bg-emerald-500"></span>
-                  <span className="font-medium text-slate-600">EVM Blockchain Wallet Auto-Provisioned</span>
+                  <span className="font-medium text-slate-600">Wallets are provisioned securely by the relay</span>
                 </div>
                 <div className="flex gap-2">
                   <Button variant="secondary" type="button" onClick={() => setIsModalOpen(false)}>

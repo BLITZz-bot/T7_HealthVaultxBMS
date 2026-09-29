@@ -21,7 +21,7 @@ from cryptography.fernet import Fernet
 from eth_account import Account
 
 # ─── Key store path ────────────────────────────────────────────────────────────
-_KEYSTORE_PATH = Path(__file__).parent / "worker_keys.json"
+_KEYSTORE_PATH = Path(os.getenv("WORKER_KEYSTORE_PATH", Path(__file__).parent / "worker_keys.json"))
 
 
 def _fernet() -> Fernet:
@@ -41,8 +41,11 @@ def _load_store() -> dict:
 
 
 def _save_store(store: dict) -> None:
-    with open(_KEYSTORE_PATH, "w") as f:
+    _KEYSTORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = _KEYSTORE_PATH.with_suffix(".tmp")
+    with open(temp_path, "w") as f:
         json.dump(store, f, indent=2)
+    temp_path.replace(_KEYSTORE_PATH)
 
 
 # ─── Public API ────────────────────────────────────────────────────────────────
@@ -100,6 +103,13 @@ def list_workers() -> list[dict]:
         {"address": v["address"], "worker_name": v["worker_name"]}
         for v in store.values()
     ]
+
+
+def delete_worker_account(worker_address: str) -> None:
+    """Remove a newly-created account when on-chain registration fails."""
+    store = _load_store()
+    if store.pop(worker_address.lower(), None) is not None:
+        _save_store(store)
 
 
 def worker_exists(worker_address: str) -> bool:

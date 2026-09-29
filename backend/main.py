@@ -18,6 +18,7 @@ Routes:
 """
 
 import os
+import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -39,6 +40,7 @@ from hasher import (
 from chain import ChainClient
 from worker_keys import (
     create_worker_account,
+    delete_worker_account,
     load_worker_account,
     worker_exists,
     list_workers,
@@ -97,8 +99,10 @@ app.add_middleware(
 
 def _check_admin(x_admin_secret: str | None):
     """Verify the X-Admin-Secret header matches RELAY_SECRET env var."""
-    expected = os.getenv("RELAY_SECRET", "change_me_to_a_long_random_secret")
-    if x_admin_secret != expected:
+    expected = os.getenv("RELAY_SECRET")
+    if not expected or expected == "change_me_to_a_long_random_secret":
+        raise HTTPException(status_code=503, detail="Relay admin authentication is not configured")
+    if not x_admin_secret or not secrets.compare_digest(x_admin_secret, expected):
         raise HTTPException(status_code=401, detail="Invalid admin secret")
 
 
@@ -167,6 +171,9 @@ async def register_worker(
     """
     _check_admin(x_admin_secret)
 
+    if chain is None:
+        raise HTTPException(status_code=503, detail="Relay is offline; worker was not registered")
+
     # 1. Create wallet
     worker_info = create_worker_account(req.worker_name, req.phone, req.aadhaar_last4)
     worker_address = worker_info["address"]
@@ -184,6 +191,7 @@ async def register_worker(
     try:
         tx_hash = chain.register_worker(worker_address, cred_hash)
     except Exception as e:
+        delete_worker_account(worker_address)
         raise HTTPException(status_code=500, detail=f"On-chain registration failed: {str(e)}")
 
     return {
@@ -386,36 +394,6 @@ async def verify_record(record_hash: str):
         "explorer":        f"https://testnet.mstscan.com/address/{record_hash}" if anchor["exists"] else None,
     }
 
-
-@app.post("/worker/generate")
-async def generate_worker_wallet():
-    """Generates a new Ethereum wallet for a worker and registers it on the smart contract."""
-    from eth_account import Account
-    import secrets
-    
-    if chain is None:
-        raise HTTPException(status_code=503, detail="Relay in offline mode")
-
-    # Generate random private key and wallet
-    priv = secrets.token_hex(32)
-    private_key = "0x" + priv
-    acct = Account.from_key(private_key)
-    wallet_address = acct.address
-
-    # Register the worker on the blockchain (using admin/deployer key)
-    # The smart contract expects: registerWorker(address _worker, bytes32 _credHash)
-    # We will just pass a dummy credHash for now as we trust the PHC admin.
-    dummy_cred_hash = "0x" + ("00" * 32)
-    try:
-        tx_hash = chain.register_worker(wallet_address, dummy_cred_hash)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to register on-chain: {str(e)}")
-
-    return {
-        "wallet_address": wallet_address,
-        "private_key": private_key,
-        "tx_hash": tx_hash
-    }
 
 @app.get("/worker/{address}")
 async def worker_status(address: str):

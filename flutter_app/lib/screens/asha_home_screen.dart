@@ -27,12 +27,13 @@ class _ASHAHomeScreenState extends State<ASHAHomeScreen> {
 
   int _pendingSyncCount = 0;
   String _careCoinBalance = 'Loading...';
-  late String _walletAddress;
+  String? _walletAddress;
 
   @override
   void initState() {
     super.initState();
-    _walletAddress = widget.user['wallet_address'] ?? BlockchainService.DEMO_WORKER_ADDRESS;
+    final wallet = widget.user['wallet_address']?.toString();
+    _walletAddress = wallet != null && RegExp(r'^0x[a-fA-F0-9]{40}$').hasMatch(wallet) ? wallet : null;
     _refreshFamilies();
     
     // Check for app updates silently in the background
@@ -50,6 +51,10 @@ class _ASHAHomeScreenState extends State<ASHAHomeScreen> {
   }
 
   Future<void> _fetchWalletBalance() async {
+    if (_walletAddress == null) {
+      if (mounted) setState(() => _careCoinBalance = 'Pending provisioning');
+      return;
+    }
     final status = await BlockchainService.getWorkerBalance(_walletAddress);
     if (mounted && status != null) {
       setState(() {
@@ -1263,7 +1268,9 @@ class _ASHAHomeScreenState extends State<ASHAHomeScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Wallet: ${_walletAddress.substring(0, 6)}...${_walletAddress.substring(_walletAddress.length - 4)}',
+                _walletAddress == null
+                    ? 'Wallet: pending secure provisioning'
+                    : 'Wallet: ${_walletAddress!.substring(0, 6)}...${_walletAddress!.substring(_walletAddress!.length - 4)}',
                 style: const TextStyle(fontSize: 12, color: Colors.grey),
               ),
             ],
@@ -1306,7 +1313,7 @@ class _ASHAHomeScreenState extends State<ASHAHomeScreen> {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Starting Cloud Sync...')),
                     );
-                    final success = await CloudSyncService.syncAll();
+                    final success = await CloudSyncService.syncAll(workerAddress: _walletAddress);
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text(success ? 'Cloud Sync Complete!' : 'Cloud Sync Failed.')),
@@ -1436,7 +1443,7 @@ class _ASHAHomeScreenState extends State<ASHAHomeScreen> {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Starting Cloud Sync...')),
               );
-              final success = await CloudSyncService.syncAll();
+              final success = await CloudSyncService.syncAll(workerAddress: _walletAddress);
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text(success ? 'Cloud Sync Complete!' : 'Cloud Sync Failed.')),

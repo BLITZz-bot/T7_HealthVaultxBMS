@@ -64,7 +64,7 @@ export const mockRepository: PhcRepository = {
       lastSyncAt: null,
       householdCount: 0,
       villageNames: input.villageOrWard ? [input.villageOrWard.trim()] : [],
-      walletAddress: input.walletAddress ?? null,
+      walletAddress: null,
     };
     db.workers.unshift(newWorker);
     emit('profiles');

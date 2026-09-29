@@ -22,7 +22,7 @@ class LocalDbService {
 
     return await openDatabase(
       path,
-      version: 7,
+      version: 8,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE users(
@@ -37,6 +37,8 @@ class LocalDbService {
             state TEXT,
             district TEXT,
             profile_image TEXT
+            ,cloud_id TEXT
+            ,phc_id TEXT
           )
         ''');
 
@@ -68,6 +70,8 @@ class LocalDbService {
           CREATE TABLE user_areas(
             user_id INTEGER,
             area_id INTEGER
+            ,cloud_id TEXT
+            ,is_synced INTEGER DEFAULT 0
           )
         ''');
 
@@ -107,6 +111,8 @@ class LocalDbService {
             has_chronic_condition INTEGER DEFAULT 0,
             chronic_notes TEXT,
             profile_image TEXT
+            ,cloud_id TEXT
+            ,is_synced INTEGER DEFAULT 0
           )
         ''');
 
@@ -127,6 +133,8 @@ class LocalDbService {
             entry_source TEXT,
             device_id TEXT,
             recorded_at TEXT
+            ,cloud_id TEXT
+            ,is_synced INTEGER DEFAULT 0
           )
         ''');
 
@@ -230,6 +238,21 @@ class LocalDbService {
             await db.execute('ALTER TABLE medical_records ADD COLUMN cloud_id TEXT');
             await db.execute('ALTER TABLE medical_records ADD COLUMN is_synced INTEGER DEFAULT 0');
           } catch (_) {}
+        }
+        if (oldVersion < 8) {
+          // v7 fresh installs were created without these sync columns.
+          for (final statement in [
+            'ALTER TABLE users ADD COLUMN cloud_id TEXT',
+            'ALTER TABLE users ADD COLUMN phc_id TEXT',
+            'ALTER TABLE families ADD COLUMN cloud_id TEXT',
+            'ALTER TABLE families ADD COLUMN is_synced INTEGER DEFAULT 0',
+            'ALTER TABLE members ADD COLUMN cloud_id TEXT',
+            'ALTER TABLE members ADD COLUMN is_synced INTEGER DEFAULT 0',
+            'ALTER TABLE medical_records ADD COLUMN cloud_id TEXT',
+            'ALTER TABLE medical_records ADD COLUMN is_synced INTEGER DEFAULT 0',
+          ]) {
+            try { await db.execute(statement); } catch (_) {}
+          }
         }
       },
     );
@@ -395,10 +418,8 @@ class LocalDbService {
 
               // Update cloud_id and phc_id from Supabase
               String? tempWalletAddress;
-              String? tempWalletPrivateKey;
               try {
                 tempWalletAddress = cloudProfile['wallet_address']?.toString();
-                tempWalletPrivateKey = cloudProfile['wallet_private_key']?.toString();
                 
                 final updateMaps = {
                   'cloud_id': cloudProfile['user_id']?.toString() ?? cloudProfile['id']?.toString(),
@@ -416,7 +437,6 @@ class LocalDbService {
               if (refreshed.isNotEmpty) {
                 final payload = await _buildUserPayload(refreshed.first);
                 payload['user']['wallet_address'] = tempWalletAddress;
-                payload['user']['wallet_private_key'] = tempWalletPrivateKey;
                 return payload;
               }
             }
