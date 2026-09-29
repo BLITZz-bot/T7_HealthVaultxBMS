@@ -306,6 +306,10 @@ async def submit_visit(req: VisitRequest):
             task_type=req.task_type,
             worker_account=worker_account,
         )
+        # INSTANT REWARD PAYOUT: The Relay automatically attests the visit
+        # This triggers the Smart Contract to instantly transfer CareCoins
+        # to the ASHA worker's wallet, eliminating manual admin approval!
+        chain.batch_attest([vk_hex])
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Visit submit failed: {str(e)}")
 
