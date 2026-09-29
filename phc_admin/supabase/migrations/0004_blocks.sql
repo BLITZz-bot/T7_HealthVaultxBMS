@@ -11,8 +11,6 @@ alter table public.villages
 -- Must use bare `name` (not lower(name)) so Supabase upsert onConflict="phc_id,name" resolves correctly.
 create unique index if not exists villages_phc_name_unique
   on public.villages (phc_id, name);
-create unique index if not exists villages_phc_id_name_unique
-  on public.villages (phc_id, name);
 
 -- Update existing villages: set block from any existing code column as a hint
 -- (Most villages at this stage are manually curated, so block may be null initially)
@@ -42,4 +40,18 @@ create policy "profiles_staff_insert_asha"
 -- Grant insert privilege to authenticated for the columns the fallback sets.
 -- role is included but the RLS WITH CHECK restricts it to 'asha' only.
 grant insert (phc_id, role, full_name, username, phone, is_active) on public.profiles to authenticated;
+
+-- Allow staff to link villages to a profile via profile_villages (fallback path).
+drop policy if exists "profile_villages_insert" on public.profile_villages;
+create policy "profile_villages_insert" on public.profile_villages
+  for insert
+  to authenticated
+  with check (
+    user_id = auth.uid()
+    or (public.is_phc_staff() and exists (
+      select 1 from public.profiles p
+      where p.user_id = profile_villages.user_id
+        and p.phc_id = public.current_phc_id()
+    ))
+  );
 
