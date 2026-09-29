@@ -4,7 +4,6 @@ import { useSession } from '@/auth/AuthContext';
 import { useLiveQuery } from '@/hooks/useLiveQuery';
 import { Badge, Button, Card, EmptyState, InlineError, PageHeader, QueryView } from '@/components/ui';
 import { formatDateTime, formatRelative, hoursSince } from '@/lib/format';
-import { INDIA_STATES_DISTRICTS } from '@/data/indiaData';
 import { UserPlus, X } from 'lucide-react';
 
 export function WorkersPage() {
