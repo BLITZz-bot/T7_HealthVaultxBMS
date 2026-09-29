@@ -21,7 +21,7 @@ export function WorkersPage() {
   const [q, setQ] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isBackendReady, setIsBackendReady] = useState(false);
-  const [backendStatus, setBackendStatus] = useState('');
+  const [backendStatus, setBackendStatus] = useState('Waking up Blockchain Server...');
   
   // Registration Form State
   const [username, setUsername] = useState('');
@@ -37,12 +37,8 @@ export function WorkersPage() {
 
   const needle = q.trim().toLowerCase();
 
+  // Wake up blockchain server immediately when page loads
   useEffect(() => {
-    if (!isModalOpen) return;
-    
-    setIsBackendReady(false);
-    setBackendStatus('Waking up Blockchain Server...');
-    
     let isSubscribed = true;
     
     const checkHealth = async () => {
@@ -70,7 +66,7 @@ export function WorkersPage() {
     poll();
     
     return () => { isSubscribed = false; };
-  }, [isModalOpen]);
+  }, []);
 
   const handleStateChange = (stateId: string) => {
     setSelectedStateId(stateId);
