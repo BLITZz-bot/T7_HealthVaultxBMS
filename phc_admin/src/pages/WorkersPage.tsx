@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { repository } from '@/backend';
 import { useSession } from '@/auth/AuthContext';
 import { useLiveQuery } from '@/hooks/useLiveQuery';
@@ -20,6 +20,8 @@ export function WorkersPage() {
 
   const [q, setQ] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isBackendReady, setIsBackendReady] = useState(false);
+  const [backendStatus, setBackendStatus] = useState('');
   
   // Registration Form State
   const [username, setUsername] = useState('');
@@ -34,6 +36,41 @@ export function WorkersPage() {
   const [formError, setFormError] = useState<string | null>(null);
 
   const needle = q.trim().toLowerCase();
+
+  useEffect(() => {
+    if (!isModalOpen) return;
+    
+    setIsBackendReady(false);
+    setBackendStatus('Waking up Blockchain Server...');
+    
+    let isSubscribed = true;
+    
+    const checkHealth = async () => {
+      try {
+        const res = await fetch('https://t7-mst-health-vault.onrender.com/health');
+        if (res.ok) {
+          if (isSubscribed) {
+             setIsBackendReady(true);
+             setBackendStatus('Blockchain Connected');
+          }
+          return true;
+        }
+      } catch (e) {
+        // ignore error, will retry
+      }
+      return false;
+    };
+
+    const poll = async () => {
+      const ok = await checkHealth();
+      if (!ok && isSubscribed) {
+        setTimeout(poll, 3000); // Poll every 3 seconds
+      }
+    };
+    poll();
+    
+    return () => { isSubscribed = false; };
+  }, [isModalOpen]);
 
   const handleStateChange = (stateId: string) => {
     setSelectedStateId(stateId);
@@ -374,13 +411,28 @@ export function WorkersPage() {
                 </select>
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
-                <Button variant="secondary" type="button" onClick={() => setIsModalOpen(false)}>
-                  Cancel
-                </Button>
-                <Button variant="primary" type="submit" loading={isSaving}>
-                  Save Worker
-                </Button>
+              <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100">
+                <div className="text-xs">
+                  {!isBackendReady ? (
+                    <span className="flex items-center gap-2 text-amber-600">
+                      <span className="relative flex size-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full size-2 bg-amber-500"></span>
+                      </span>
+                      {backendStatus}
+                    </span>
+                  ) : (
+                    <span className="text-emerald-600 font-medium flex items-center gap-1">✓ {backendStatus}</span>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="secondary" type="button" onClick={() => setIsModalOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button variant="primary" type="submit" loading={isSaving} disabled={!isBackendReady || !selectedStateId || !selectedDistrictId}>
+                    Save Worker
+                  </Button>
+                </div>
               </div>
             </form>
           </div>
