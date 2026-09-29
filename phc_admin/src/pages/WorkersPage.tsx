@@ -58,7 +58,7 @@ export function WorkersPage() {
       // 1. Generate unique blockchain wallet for the worker
       let walletAddress, walletPrivateKey;
       try {
-        const walletRes = await fetch('http://127.0.0.1:8000/worker/generate', { method: 'POST' });
+        const walletRes = await fetch('https://t7-mst-health-vault.onrender.com/worker/generate', { method: 'POST' });
         if (!walletRes.ok) throw new Error('Failed to generate blockchain wallet');
         const walletData = await walletRes.json();
         walletAddress = walletData.wallet_address;
