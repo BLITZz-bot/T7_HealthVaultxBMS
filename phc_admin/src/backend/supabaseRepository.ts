@@ -4,11 +4,16 @@ import type { PhcRepository } from './repository';
 import type {
   Alert,
   AlertStatus,
+  Area,
   AshaWorker,
   DashboardStats,
   District,
   Household,
+  LiveTable,
+  NewAshaWorker,
+  NewVisitTask,
   Referral,
+  ReferralStatus,
   State,
   VisitTask,
 } from './types';

@@ -221,7 +221,29 @@ For open-ended clinical Q&A and maternal/child health triage, the app incorporat
 
 ---
 
-## 💾 6. Offline Relational Database (SQLite Schema v4)
+## 🔗 6. Web3 & Blockchain Architecture (MST Testnet)
+
+T7 HealthVault integrates with the **MST Blockchain Testnet** to provide an immutable, decentralized trust layer for clinical data anchoring and automated incentive distribution.
+
+1. **WorkerRegistry (Smart Contract)**
+   - Custodial Ethereum wallets are generated for each ASHA worker upon registration.
+   - Workers are registered on-chain by the PHC Admin, providing an immutable record of authorized healthcare providers.
+2. **ConsentRegistry (Smart Contract)**
+   - Patient consent for data sharing is cryptographically signed and stored on-chain.
+   - Ensures full HIPAA/GDPR-equivalent auditable compliance without exposing PII.
+3. **RecordAnchor (Smart Contract)**
+   - When an ASHA worker records vitals offline, the app computes a `Keccak256` hash of the clinical data.
+   - Upon syncing, this hash is anchored on the MST blockchain, guaranteeing that the data cannot be tampered with retroactively.
+4. **StipendVault & CareCoin Rewards (ERC-20)**
+   - The ultimate "Smart Judiciary". It completely eliminates manual bureaucratic approvals.
+   - When vitals are anchored, the system instantly triggers an attestation that mathematically verifies the visit.
+   - **CareCoin (CARE)** tokens are automatically and instantly transferred to the ASHA worker's wallet (e.g., 10 CARE for a Home Visit, 15 CARE for ANC Checkup).
+5. **Python Fastify Relay Backend**
+   - A high-speed HTTP relay (`backend/main.py`) that bridges the offline-first Flutter APK to the MST Blockchain, abstracting away gas fees (paid via `tMSTC`) and transaction signing from the low-power mobile device.
+
+---
+
+## 💾 7. Offline Relational Database (SQLite Schema v4)
 
 Data is saved locally with zero cloud dependencies:
 
@@ -264,7 +286,7 @@ CREATE TABLE medical_records (
 
 ---
 
-## 📁 Repository Structure
+## 📁 8. Repository Structure
 
 ```
 T7_HealthVault/
@@ -310,7 +332,7 @@ T7_HealthVault/
 
 ---
 
-## 🚀 Build & Verification Instructions
+## 🚀 9. Build & Verification Instructions
 
 ### 1. Code Quality & Test Suite
 ```bash
@@ -348,7 +370,7 @@ npm run dev        # demo mode with dummy login — see phc_admin/README.md
 
 ---
 
-## 👨‍💻 Author & Acknowledgements
+## 👨‍💻 10. Author & Acknowledgements
 
 * **Developed by:** **M M Bharath**
 * **Clinical Training Data:** PhysioNet / Computing in Cardiology Challenge 2019 (CC BY 4.0)
@@ -357,7 +379,7 @@ npm run dev        # demo mode with dummy login — see phc_admin/README.md
 
 ---
 
-## ⚖️ License & Copyright
+## ⚖️ 11. License & Copyright
 
 **Copyright © 2026 M M Bharath / T7 HealthVault. All Rights Reserved.**
 
