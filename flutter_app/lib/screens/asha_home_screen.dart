@@ -35,10 +35,22 @@ class _ASHAHomeScreenState extends State<ASHAHomeScreen> {
     final wallet = widget.user['wallet_address']?.toString();
     _walletAddress = wallet != null && RegExp(r'^0x[a-fA-F0-9]{40}$').hasMatch(wallet) ? wallet : null;
     _refreshFamilies();
-    
-    // Check for app updates silently in the background
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       AppUpdateService.checkAndPromptUpdate(context, showUpToDateFeedback: false);
+      // Background pull: fetch data from cloud for cross-device sync
+      CloudSyncService.syncFromCloud().then((success) {
+        if (success && mounted) {
+          _refreshFamilies();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Clinical records synced from cloud.'),
+              backgroundColor: Color(0xFF00796B),
+              duration: Duration(seconds: 1),
+            ),
+          );
+        }
+      });
     });
   }
 
@@ -1319,6 +1331,33 @@ class _ASHAHomeScreenState extends State<ASHAHomeScreen> {
                         SnackBar(content: Text(success ? 'Cloud Sync Complete!' : 'Cloud Sync Failed.')),
                       );
                       _updateSyncCount();
+                      _refreshFamilies();
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(height: 10),
+              // Sync FROM Cloud — pull records from another device
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF1976D2),
+                    side: const BorderSide(color: Color(0xFF1976D2)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  icon: const Icon(Icons.cloud_download, size: 18),
+                  label: const Text('Sync from Cloud'),
+                  onPressed: () async {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Pulling records from cloud...')),
+                    );
+                    final success = await CloudSyncService.syncFromCloud();
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(success ? 'Records pulled from cloud!' : 'Cloud pull failed.')),
+                      );
+                      _refreshFamilies();
                     }
                   },
                 ),

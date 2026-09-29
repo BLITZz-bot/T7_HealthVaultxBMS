@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/local_db_service.dart';
+import '../services/cloud_sync_service.dart';
 import '../services/app_update_service.dart';
 import '../widgets/language_switcher_widget.dart';
 import '../widgets/searchable_dropdown.dart';
@@ -22,6 +23,8 @@ class AdminSettingsScreen extends StatefulWidget {
 class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   bool _isSeeding = false;
   bool _isClearing = false;
+  bool _isSyncingWorkers = false;
+  bool _isSyncingJurisdictions = false;
   late Future<Map<String, int>> _statsFuture;
 
   @override
@@ -405,7 +408,47 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
       if (mounted) {
         setState(() => _isClearing = false);
         _loadStats();
+       }
+    }
+  }
+
+  void _handleSyncWorkers() async {
+    setState(() => _isSyncingWorkers = true);
+    try {
+      final success = await CloudSyncService.syncWorkersFromCloud();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(success ? 'Workers synced from cloud successfully!' : 'Worker sync failed. Check connection.'),
+            backgroundColor: success ? const Color(0xFF00796B) : Colors.red.shade700,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
       }
+      _loadStats();
+    } finally {
+      if (mounted) setState(() => _isSyncingWorkers = false);
+    }
+  }
+
+  void _handleSyncJurisdictions() async {
+    setState(() => _isSyncingJurisdictions = true);
+    try {
+      final success = await CloudSyncService.syncMasterJurisdictions();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(success ? 'Master jurisdictions synced from cloud!' : 'Jurisdiction sync failed.'),
+            backgroundColor: success ? const Color(0xFF00796B) : Colors.red.shade700,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+      _loadStats();
+    } finally {
+      if (mounted) setState(() => _isSyncingJurisdictions = false);
     }
   }
 
@@ -791,6 +834,113 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                                 child: const Text('Reset', style: TextStyle(fontSize: 12)),
                               ),
                       ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            // Cloud Sync Section
+            _buildSectionHeader(
+              icon: Icons.cloud_sync_outlined,
+              title: 'Cloud Sync',
+              subtitle: 'Manually pull data from Supabase to your local device',
+            ),
+            const SizedBox(height: 12),
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.grey.shade200),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withAlpha(6),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  // Sync Workers
+                  InkWell(
+                    onTap: _isSyncingWorkers ? null : _handleSyncWorkers,
+                    borderRadius: BorderRadius.circular(16),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.deepPurple.shade50,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(Icons.badge_rounded, color: Colors.deepPurple.shade700, size: 24),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Sync ASHA Workers',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF263238)),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Pull worker profiles from Supabase to local',
+                                  style: TextStyle(fontSize: 11, color: Colors.black45),
+                                ),
+                              ],
+                            )),
+                          _isSyncingWorkers
+                              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF004D40)))
+                              : const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.black38),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  // Sync Master Jurisdictions
+                  InkWell(
+                    onTap: _isSyncingJurisdictions ? null : _handleSyncJurisdictions,
+                    borderRadius: BorderRadius.circular(16),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.teal.shade50,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(Icons.public_rounded, color: Color(0xFF00796B), size: 24),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Sync Master Jurisdictions',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF263238)),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Pull states, districts & areas from Supabase',
+                                  style: TextStyle(fontSize: 11, color: Colors.black45),
+                                ),
+                              ],
+                            )),
+                          _isSyncingJurisdictions
+                              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF004D40)))
+                              : const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.black38),
+                        ],
+                      ),
                     ),
                   ),
                 ],

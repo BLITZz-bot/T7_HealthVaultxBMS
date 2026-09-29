@@ -23,6 +23,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final TextEditingController _stateSearchController = TextEditingController();
+  bool _isSyncingWorkers = false;
   String _stateSearchQuery = '';
 
   Map<String, dynamic>? _firstWhereOrNull(List<dynamic> list, bool Function(dynamic) test) {
@@ -42,7 +43,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     _tabController = TabController(length: 3, vsync: this);
     _refreshData();
     
-    // Background sync of master data
+    // Background sync of master data and workers from cloud
     CloudSyncService.syncMasterJurisdictions().then((success) {
       if (success && mounted) {
         _refreshData();
@@ -53,6 +54,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
             duration: Duration(seconds: 2),
           ),
         );
+      }
+    });
+
+    CloudSyncService.syncWorkersFromCloud().then((success) {
+      if (success && mounted) {
+        _refreshData();
       }
     });
     
@@ -484,6 +491,35 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: const Color(0xFF004D40), minimumSize: const Size(120, 40)),
                 onPressed: _showAddWorkerDialog, icon: const Icon(Icons.person_add, size: 18), label: const Text('Add New'),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.tealAccent,
+                  foregroundColor: const Color(0xFF004D40),
+                  minimumSize: const Size(110, 40),
+                ),
+                onPressed: _isSyncingWorkers ? null : () async {
+                  setState(() => _isSyncingWorkers = true);
+                  try {
+                    final success = await CloudSyncService.syncWorkersFromCloud();
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(success ? 'Workers synced from cloud!' : 'Sync failed. Check connection.'),
+                          backgroundColor: success ? const Color(0xFF00796B) : Colors.red.shade700,
+                        ),
+                      );
+                    }
+                    _refreshData();
+                  } finally {
+                    if (mounted) setState(() => _isSyncingWorkers = false);
+                  }
+                },
+                icon: _isSyncingWorkers
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF004D40)))
+                    : const Icon(Icons.sync, size: 18),
+                label: const Text('Sync'),
               ),
             ]),
           ),
